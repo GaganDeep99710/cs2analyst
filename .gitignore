@@ -1,0 +1,36 @@
+# Secrets — never commit
+.env
+**/.env
+# SQLite DB (user accounts + password hashes) and session secret
+data/
+callouts/navs/
+tools/cf.log
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Large / local-only (not needed to deploy)
+# 170 MB of VRF CLI + cloudflared binaries
+tools/
+# raw demo files
+demos/
+# ephemeral user uploads
+uploads/
+# generated report HTML
+reports/
+node_modules/
+
+# demo files anywhere
+*.dem
+*.dem.bz2
+*.dem.gz
+*.zst
+
+# Callout intermediates — keep only the final callouts.json
+callouts/extract/
+callouts/inferno.json
+callouts/map-data.json

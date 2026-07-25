@@ -1,0 +1,11 @@
+colorama==0.4.6
+demoparser2==0.41.4
+numpy==2.5.1
+pandas==3.0.3
+polars==1.43.0
+polars-runtime-32==1.43.0
+pyarrow==25.0.0
+python-dateutil==2.9.0.post0
+six==1.17.0
+tqdm==4.69.0
+tzdata==2026.3

@@ -1,0 +1,17 @@
+# keep the image small and never ship secrets or huge local files
+services/parser/.venv
+services/parser/.env
+**/__pycache__
+*.pyc
+uploads
+demos
+data
+reports
+docs
+tools
+callouts/extract
+callouts/navs
+callouts/inferno.json
+callouts/map-data.json
+.git
+node_modules

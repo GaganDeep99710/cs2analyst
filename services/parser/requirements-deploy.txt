@@ -1,0 +1,11 @@
+# Runtime deps for the deployed web app (no dev/extraction tooling).
+fastapi
+uvicorn[standard]
+python-multipart
+itsdangerous
+python-dotenv
+pydantic
+demoparser2
+pandas
+zstandard
+google-genai
