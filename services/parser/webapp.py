@@ -27,6 +27,8 @@ import report_html
 import skills as skillmod
 import store
 
+VERSION = "vol-check-1"
+
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
 app.add_middleware(SessionMiddleware, secret_key=store.session_secret(),
@@ -420,6 +422,11 @@ def pick(request: Request, job_id: str, player: str = Form(...)):
     p = job.pop("_parser", None)
     POOL.submit(lambda: _guarded(job, player, p))
     return RedirectResponse(f"/j/{job_id}", 303)
+
+
+@app.get("/version")
+def version():
+    return {"version": VERSION}
 
 
 @app.get("/api/status/{job_id}")
