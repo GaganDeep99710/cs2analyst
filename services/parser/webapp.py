@@ -24,6 +24,7 @@ import context_pack
 import core
 import coach
 import report_html
+import skills as skillmod
 import store
 
 store.init()
@@ -114,6 +115,20 @@ display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hi
 .del{background:transparent;color:var(--crit);border:1px solid var(--line)}
 .empty{text-align:center;color:var(--muted);padding:34px 10px;
 font-family:var(--mono);font-size:13px}
+.progcard{margin-bottom:26px}
+.proggrid{display:flex;gap:24px;flex-wrap:wrap;align-items:center}
+.progradar{flex:1 1 300px;min-width:250px}
+.progrows{flex:1 1 300px;min-width:250px;display:flex;flex-direction:column;gap:9px}
+.progrow{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:13px}
+.pcat{width:92px;color:var(--muted)}
+.pcur{width:26px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.pdelta{width:46px;font-size:11px}
+.pdelta.up{color:var(--good)}.pdelta.down{color:var(--crit)}.pdelta.flat{color:var(--faint)}
+.reslegend{display:flex;gap:18px;justify-content:center;font-family:var(--mono);
+font-size:11px;color:var(--muted);margin:8px 0 0}
+.reslegend span{display:flex;align-items:center;gap:6px}
+.rl-you::before{content:"";width:15px;height:3px;background:var(--ct)}
+.rl-goal::before{content:"";width:15px;border-top:2px dashed var(--faint)}
 .steps{display:flex;flex-direction:column;gap:11px;margin:22px 0 0}
 .step{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;
 font-family:var(--mono);font-size:13px;color:var(--faint)}
@@ -161,7 +176,7 @@ def _run(job: dict, target: str, p=None):
         "map": pack["identity"]["map"], "player": target,
         "kd": sb["kd_ratio"], "adr": sb["adr"], "hs": sb["headshot_pct"],
         "rounds": pack["identity"]["rounds_played"], "deaths": sb["deaths"],
-        "summary": rep["summary"]}, html)
+        "summary": rep["summary"], "skills": pack.get("skills")}, html)
     job["player"] = target
     job["status"] = "done"
     job["stage"] = "Complete"
@@ -291,7 +306,8 @@ def home(request: Request):
         "</div>"
         "<input type=file id=file name=file accept='.dem,.zst,.gz,.bz2' required>"
         "<button class=full id=go type=submit>Analyze new match</button>"
-        "</form></div>" + history + "</div>" + _UPLOAD_JS)
+        "</form></div>" + _progression(reports) + history + "</div>"
+        + _UPLOAD_JS)
 
 
 def _report_card(r: dict) -> str:
@@ -310,6 +326,57 @@ def _report_card(r: dict) -> str:
         f"<form method=post action=/delete/{esc(r['id'])} "
         f"onsubmit=\"return confirm('Delete this report?')\">"
         f"<button class=del type=submit>Delete</button></form></div></div>")
+
+
+def _spark(vals: list[int], w: int = 90, h: int = 22) -> str:
+    n = len(vals)
+    if n == 1:
+        vals = vals * 2
+        n = 2
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1
+
+    def X(i):
+        return 2 + i / (n - 1) * (w - 4)
+
+    def Y(v):
+        return 2 + (1 - (v - lo) / rng) * (h - 4)
+
+    pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(vals))
+    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+            f'style="flex:0 0 auto"><polyline points="{pts}" fill="none" '
+            f'stroke="var(--ct)" stroke-width="1.5" stroke-linejoin="round"/>'
+            f'<circle cx="{X(n - 1):.1f}" cy="{Y(vals[-1]):.1f}" r="2.2" '
+            f'fill="var(--ct)"/></svg>')
+
+
+def _progression(reports: list[dict]) -> str:
+    with_sk = [r for r in reports if r.get("skills")]
+    if not with_sk:
+        return ""
+    latest = with_sk[0]["skills"]
+    radar = (report_html.radar_svg(latest)
+             if all(c in latest for c in skillmod.CATEGORIES) else "")
+    rows = ""
+    for cat in skillmod.CATEGORIES:
+        series = [r["skills"].get(cat) for r in reversed(with_sk)
+                  if r["skills"].get(cat) is not None]
+        if not series:
+            continue
+        cur, delta = series[-1], series[-1] - series[0]
+        cls, ar = (("up", "▲") if delta > 2 else
+                   ("down", "▼") if delta < -2 else ("flat", "→"))
+        rows += (f'<div class=progrow><span class=pcat>{esc(cat)}</span>'
+                 f'{_spark(series)}<span class=pcur>{cur}</span>'
+                 f'<span class="pdelta {cls}">{ar} {abs(delta)}</span></div>')
+    left = f'<div class=progradar>{radar}</div>' if radar else ""
+    return (
+        '<div class="card progcard"><p class=h style="margin-bottom:14px">'
+        f'Your progression <span class=small>· {len(with_sk)} '
+        f'{"match" if len(with_sk) == 1 else "matches"}</span></p>'
+        f'<div class=proggrid>{left}<div class=progrows>{rows}</div></div>'
+        '<p class=reslegend><span class=rl-you>Latest</span>'
+        '<span class=rl-goal>Goal</span></p></div>')
 
 
 _UPLOAD_JS = """<script>

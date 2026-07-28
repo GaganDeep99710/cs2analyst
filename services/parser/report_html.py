@@ -14,11 +14,13 @@ Usage:
 """
 
 import html
+import math
 import sys
 from pathlib import Path
 
 import coach
 import context_pack
+import skills as skillmod
 
 PISTOLS = {"glock", "hkp2000", "usp_silencer", "p2000", "p250", "tec9",
            "fiveseven", "cz75a", "deagle", "elite", "revolver"}
@@ -77,6 +79,11 @@ CSS = """
   letter-spacing:.03em;margin:0 0 36px;display:flex;align-items:center;gap:7px}
 .verified::before{content:"";width:7px;height:7px;border-radius:50%;
   background:var(--good);box-shadow:0 0 8px var(--good)}
+.radlegend{display:flex;gap:18px;justify-content:center;font-family:var(--mono);
+  font-size:11px;color:var(--muted);margin:6px 0 0}
+.radlegend span{display:flex;align-items:center;gap:6px}
+.lg-you::before{content:"";width:15px;height:3px;background:var(--ct)}
+.lg-goal::before{content:"";width:15px;border-top:2px dashed var(--faint)}
 
 .h{font-family:var(--mono);font-size:12px;letter-spacing:.2em;
   text-transform:uppercase;color:var(--muted);margin:0 0 14px;
@@ -161,6 +168,50 @@ def _chips(sig: dict) -> str:
     )
 
 
+def radar_svg(scores: dict) -> str:
+    """Self-contained radar of the six category scores vs the goal ring."""
+    cats = [c for c in skillmod.CATEGORIES if c in scores]
+    n = len(cats)
+    cx, cy, R = 170, 150, 100
+
+    def pt(i, val):
+        a = math.radians(-90 + i * 360 / n)
+        rr = R * max(val, 0) / 100
+        return cx + rr * math.cos(a), cy + rr * math.sin(a)
+
+    def poly(vals):
+        return " ".join(f"{x:.1f},{y:.1f}"
+                        for x, y in (pt(i, v) for i, v in enumerate(vals)))
+
+    rings = "".join(
+        f'<polygon points="{poly([lvl] * n)}" fill="none" '
+        f'stroke="var(--line)" stroke-width="1"/>' for lvl in (25, 50, 75, 100))
+    axes = labels = ""
+    for i, c in enumerate(cats):
+        ex, ey = pt(i, 100)
+        axes += (f'<line x1="{cx}" y1="{cy}" x2="{ex:.1f}" y2="{ey:.1f}" '
+                 f'stroke="var(--line)" stroke-width="1"/>')
+        lx, ly = pt(i, 120)
+        anc = "middle" if abs(lx - cx) < 12 else ("end" if lx < cx else "start")
+        labels += (
+            f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="{anc}" '
+            f'dominant-baseline="middle" font-family="var(--mono)" '
+            f'font-size="10.5" fill="var(--muted)">{esc(c)} '
+            f'<tspan fill="var(--ink)" font-weight="700">{scores[c]}</tspan>'
+            f'</text>')
+    goal = (f'<polygon points="{poly([skillmod.GOALS[c] for c in cats])}" '
+            f'fill="none" stroke="var(--faint)" stroke-width="1.5" '
+            f'stroke-dasharray="4 3"/>')
+    you = (f'<polygon points="{poly([scores[c] for c in cats])}" '
+           f'fill="rgba(90,169,240,.18)" stroke="var(--ct)" stroke-width="2"/>')
+    dots = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.6" '
+                   f'fill="var(--ct)"/>'
+                   for x, y in (pt(i, scores[c]) for i, c in enumerate(cats)))
+    return (f'<svg viewBox="0 0 340 300" width="100%" '
+            f'style="max-width:400px;display:block;margin:2px auto 0">'
+            f'{rings}{axes}{goal}{you}{dots}{labels}</svg>')
+
+
 def render(pack: dict, report: dict, meta: dict) -> str:
     ident, sb = pack["identity"], pack["your_scoreboard"]
     sigs = {d["round"]: d for d in pack["deaths"]}
@@ -172,6 +223,16 @@ def render(pack: dict, report: dict, meta: dict) -> str:
     ]
     cells = "".join(f'<div class="cell"><div class="k">{esc(k)}</div>'
                     f'<div class="v">{esc(v)}</div></div>' for k, v in stats)
+
+    sk = pack.get("skills")
+    skill_section = ""
+    if sk:
+        skill_section = (
+            '<p class="h">Skill Profile — this match</p>'
+            '<div class="card" style="padding:16px 18px 14px">'
+            + radar_svg(sk) +
+            '<p class="radlegend"><span class="lg-you">You</span>'
+            '<span class="lg-goal">Goal</span></p></div>')
 
     cards = ""
     for note in sorted(report["deaths"], key=lambda x: x["round"]):
@@ -212,6 +273,8 @@ def render(pack: dict, report: dict, meta: dict) -> str:
 
   <div class="stats">{cells}</div>
   <p class="verified">Scoreboard verified against FACEIT's own numbers</p>
+
+  {skill_section}
 
   <p class="h">Every death, and how to fix it</p>
   <div class="rounds">{cards}</div>

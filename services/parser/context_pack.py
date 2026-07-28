@@ -12,6 +12,7 @@ import json
 
 import callouts
 import core
+import skills
 
 
 def build_pack(demo_path: str, target: str, p=None) -> dict:
@@ -43,6 +44,7 @@ def build_pack(demo_path: str, target: str, p=None) -> dict:
             "rounds_played": n,
             "total_deaths": len(deaths),
         },
+        "skills": skills.skill_scores(p, target),
         "your_scoreboard": {
             "kills": int(me["K"]), "deaths": int(me["D"]),
             "assists": int(me["A"]),

@@ -9,6 +9,7 @@ pool without locking headaches; WAL mode allows concurrent reads.
 
 import hashlib
 import hmac
+import json
 import secrets
 import sqlite3
 import time
@@ -42,10 +43,15 @@ def init() -> None:
             created_at REAL,
             map TEXT, player TEXT,
             kd REAL, adr REAL, hs INTEGER, rounds INTEGER, deaths INTEGER,
-            summary TEXT, html TEXT,
+            summary TEXT, html TEXT, skills TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id)
         );
         """)
+        # migrate older DBs that predate the skills column
+        try:
+            c.execute("ALTER TABLE reports ADD COLUMN skills TEXT")
+        except sqlite3.OperationalError:
+            pass
 
 
 # ---- auth --------------------------------------------------------------
@@ -107,20 +113,29 @@ def save_report(rid: str, uid: int, meta: dict, html: str) -> None:
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO reports
-            (id,user_id,created_at,map,player,kd,adr,hs,rounds,deaths,summary,html)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (id,user_id,created_at,map,player,kd,adr,hs,rounds,deaths,summary,html,skills)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (rid, uid, time.time(), meta.get("map"), meta.get("player"),
              meta.get("kd"), meta.get("adr"), meta.get("hs"),
-             meta.get("rounds"), meta.get("deaths"), meta.get("summary"), html))
+             meta.get("rounds"), meta.get("deaths"), meta.get("summary"), html,
+             json.dumps(meta.get("skills") or {})))
 
 
 def list_reports(uid: int) -> list[dict]:
     with _conn() as c:
         rows = c.execute(
-            """SELECT id,created_at,map,player,kd,adr,hs,rounds,deaths,summary
+            """SELECT id,created_at,map,player,kd,adr,hs,rounds,deaths,summary,skills
             FROM reports WHERE user_id=? ORDER BY created_at DESC""",
             (uid,)).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["skills"] = json.loads(d.get("skills") or "{}")
+            except (ValueError, TypeError):
+                d["skills"] = {}
+            out.append(d)
+        return out
 
 
 def get_report(rid: str, uid: int) -> dict | None:
