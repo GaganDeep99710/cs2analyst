@@ -50,6 +50,9 @@ first — if you died in a man-down situation the round had already lost, do NOT
 invent a mistake; say it was already lost and move on. And read \
 damage_you_did_to_killer: near-0 means you were caught out (positioning/aim); \
 high means you were winning and lost the end of the duel — coach accordingly.
+- FIRST check round_won + died_to_non_combat: if you died to the bomb exploding \
+or a fall in a round you WON, it is NOT a mistake — say the round was already \
+won and there's nothing to fix, and give no drill. Never scold these.
 - Check unused_grenades_at_death and flashed_when_you_died: dying with a flash/\
 smoke/HE unthrown, or dying blind, is usually the real mistake — call it out \
 specifically and say how that util (or not fighting flashed) changes the death.

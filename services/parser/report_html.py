@@ -133,7 +133,14 @@ CSS = """
 def _chips(sig: dict) -> str:
     out = []
     kb = sig.get("killed_by")
-    if kb == "the bomb exploding":
+    won = sig.get("round_won")
+    non_combat = sig.get("died_to_non_combat")
+    if non_combat and won:
+        # died to your own bomb / a fall AFTER winning — not a mistake
+        out.append(("Round won", "good"))
+        out.append(("Bomb blast" if kb == "the bomb exploding"
+                    else "Fall", ""))
+    elif kb == "the bomb exploding":
         out.append(("Caught by bomb", "crit"))
     elif kb == "fall/world damage":
         out.append(("Fall damage", "t"))
@@ -153,7 +160,7 @@ def _chips(sig: dict) -> str:
         if sig.get("headshot"):
             out.append(("HS", ""))
     ma = sig.get("man_advantage")
-    if ma is not None and ma < 0:
+    if ma is not None and ma < 0 and not sig.get("round_won"):
         out.append(("Round already lost", ""))
     dmg = sig.get("damage_you_did_to_killer")
     if dmg is not None and dmg >= 60:

@@ -107,6 +107,25 @@ def round_of(tick: int, bounds: list[tuple[int, int]]) -> int | None:
     return None
 
 
+def round_winners(p: DemoParser, bounds=None) -> dict[int, str]:
+    """{real_round_index: 'T'|'CT'} — the winner of each real round.
+
+    Aligned by TICK, not by order: the FACEIT knife round produces a decisive
+    round_end too, so ordering the winners would shift every real round by one
+    (that bug made 'died to bomb but round WON' look like a loss). Mapping each
+    round_end to its round by tick drops the pre-match knife round cleanly.
+    """
+    bounds = bounds if bounds is not None else real_round_bounds(p)
+    re = p.parse_event("round_end")
+    re = re[re["winner"].isin(["T", "CT"])]
+    winners: dict[int, str] = {}
+    for _, row in re.iterrows():
+        ri = round_of(row["tick"], bounds)
+        if ri is not None:
+            winners[ri] = row["winner"]
+    return winners
+
+
 def scoreboard(p: DemoParser) -> pd.DataFrame:
     bounds = real_round_bounds(p)
     n = len(bounds)
@@ -388,6 +407,7 @@ def death_breakdown(p: DemoParser, target: str) -> list[dict]:
     blind_me = (blind[blind["user_name"] == tname]
                 if len(blind) and "user_name" in blind.columns
                 else blind.iloc[0:0])
+    winners = round_winners(p, bounds)
 
     out = []
     for _, r in mine.iterrows():
@@ -445,6 +465,9 @@ def death_breakdown(p: DemoParser, target: str) -> list[dict]:
             "damage_you_did_to_killer": dmg_to_killer,
             "unused_grenades_at_death": unused,
             "flashed_when_you_died": flashed,
+            "round_won": bool(
+                winners.get(rnd) == TEAM_SIDE.get(int(r["user_team_num"]))),
+            "died_to_non_combat": bool(is_bomb or is_suicide),
             "x": float(r["user_X"]) if pd.notna(r.get("user_X")) else None,
             "y": float(r["user_Y"]) if pd.notna(r.get("user_Y")) else None,
             "z": float(r["user_Z"]) if pd.notna(r.get("user_Z")) else None,

@@ -98,8 +98,19 @@ def build_pack(demo_path: str, target: str, p=None) -> dict:
                 "you couldn't see your killer. You either peeked into a flash or "
                 "held an angle while blind. The fix: don't take or hold fights "
                 "while flashed; back off and re-peek when you can see.",
+            "round_won": "did your team WIN this round. If you died a non-combat "
+                "death (the bomb exploding, a fall) in a round you WON, it is NOT "
+                "a mistake — you were caught in your own team's bomb blast or the "
+                "map after the round was already secured.",
+            "died_to_non_combat": "you died to the bomb exploding or fall/world "
+                "damage, not to an enemy in a gunfight.",
         },
         "coaching_rules": [
+            "If died_to_non_combat is true AND round_won is true, it is NOT a "
+            "mistake — you died to your own bomb's blast or a fall AFTER the "
+            "round was won. Say that plainly ('caught in your bomb's detonation, "
+            "but the round was already won — nothing to fix') and give NO drill. "
+            "Never coach timing/positioning/movement on these.",
             "WEIGHT by situation. Do NOT criticize deaths where man_advantage is "
             "negative — the round was already lost before you died; acknowledge "
             "briefly or note the team lost it earlier, don't blame you. Spend "
