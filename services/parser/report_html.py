@@ -214,8 +214,10 @@ def radar_svg(scores: dict) -> str:
     dots = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.6" '
                    f'fill="var(--ct)"/>'
                    for x, y in (pt(i, scores[c]) for i, c in enumerate(cats)))
-    return (f'<svg viewBox="0 0 340 300" width="100%" '
-            f'style="max-width:400px;display:block;margin:2px auto 0">'
+    # widen the viewBox horizontally so long left/right labels (Positioning,
+    # Fragging) don't clip off the edges; chart stays centered on cx=170.
+    return (f'<svg viewBox="-46 0 432 300" width="100%" '
+            f'style="max-width:440px;display:block;margin:2px auto 0">'
             f'{rings}{axes}{goal}{you}{dots}{labels}</svg>')
 
 
