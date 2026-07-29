@@ -27,7 +27,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "claude-live-2"
+VERSION = "volume-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -450,6 +450,7 @@ def version():
         "has_anthropic_key": has_claude,
         "has_gemini_key": has_gemini,
         "anthropic_installed": anthropic_installed,
+        "storage": store.stats(),
     }
 
 

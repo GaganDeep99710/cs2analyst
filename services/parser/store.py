@@ -10,14 +10,30 @@ pool without locking headaches; WAL mode allows concurrent reads.
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import sqlite3
 import time
 from pathlib import Path
 
-DATA = Path(__file__).parents[2] / "data"
-DATA.mkdir(exist_ok=True)
+# Persist to DATA_DIR if set (point this at a mounted volume so data survives
+# redeploys); otherwise default to <repo>/data == /app/data in the container.
+DATA = Path(os.getenv("DATA_DIR") or (Path(__file__).parents[2] / "data"))
+DATA.mkdir(parents=True, exist_ok=True)
 DB = DATA / "app.db"
+
+
+def stats() -> dict:
+    """Small health snapshot so we can verify the volume is persisting."""
+    info = {"data_dir": str(DATA), "db_exists": DB.exists(), "users": None}
+    if DB.exists():
+        try:
+            with _conn() as c:
+                info["users"] = c.execute(
+                    "SELECT COUNT(*) FROM users").fetchone()[0]
+        except sqlite3.Error:
+            pass
+    return info
 
 
 def _conn() -> sqlite3.Connection:
