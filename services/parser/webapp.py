@@ -27,7 +27,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "claude-live-1"
+VERSION = "claude-live-2"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -429,6 +429,11 @@ def version():
     import os
     has_claude = os.getenv("ANTHROPIC_API_KEY", "").startswith("sk-ant-")
     has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+    try:
+        import anthropic  # noqa: F401
+        anthropic_installed = True
+    except ImportError:
+        anthropic_installed = False
     forced = os.getenv("LLM_PROVIDER", "").lower()
     if forced != "gemini" and has_claude:
         active, model = "claude", coach.CLAUDE_MODEL
@@ -444,6 +449,7 @@ def version():
         "llm_model": model,
         "has_anthropic_key": has_claude,
         "has_gemini_key": has_gemini,
+        "anthropic_installed": anthropic_installed,
     }
 
 
