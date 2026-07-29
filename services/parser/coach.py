@@ -26,8 +26,14 @@ import context_pack
 
 load_dotenv(Path(__file__).with_name(".env"))
 
-GEMINI_MODEL = "gemini-flash-latest"
-CLAUDE_MODEL = "claude-opus-4-8"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+# Opus 4.8 = best quality. Set CLAUDE_MODEL=claude-sonnet-5 for ~half the cost.
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
+# $ per 1M tokens (input, output) for the cost display
+_CLAUDE_RATES = {
+    "claude-opus-4-8": (5, 25), "claude-opus-4-7": (5, 25),
+    "claude-sonnet-5": (3, 15), "claude-haiku-4-5": (1, 5),
+}
 
 SYSTEM = """You are an elite Counter-Strike 2 demo-review coach. You are \
 watching one player's deaths, round by round, and telling them exactly what \
@@ -120,7 +126,7 @@ def _claude(user: str) -> tuple[dict, dict]:
     client = anthropic.Anthropic()
     resp = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=4000,
+        max_tokens=8000,  # room for adaptive thinking + the per-death JSON
         thinking={"type": "adaptive"},
         system=SYSTEM,
         output_config={"format": {"type": "json_schema", "schema": schema}},
@@ -128,7 +134,8 @@ def _claude(user: str) -> tuple[dict, dict]:
     )
     text = next(b.text for b in resp.content if b.type == "text")
     u = resp.usage
-    cost = (u.input_tokens / 1e6 * 5) + (u.output_tokens / 1e6 * 25)
+    rin, rout = _CLAUDE_RATES.get(CLAUDE_MODEL, (5, 25))
+    cost = (u.input_tokens / 1e6 * rin) + (u.output_tokens / 1e6 * rout)
     return json.loads(text), {
         "label": CLAUDE_MODEL,
         "input_tokens": u.input_tokens,
@@ -138,15 +145,21 @@ def _claude(user: str) -> tuple[dict, dict]:
 
 
 def generate(pack: dict) -> tuple[dict, dict]:
+    # Claude wins when its key is set; Gemini is the free fallback.
+    # LLM_PROVIDER=gemini forces Gemini even if an Anthropic key is present.
     user = _user_prompt(pack)
+    provider = os.getenv("LLM_PROVIDER", "").lower()
+    has_claude = os.getenv("ANTHROPIC_API_KEY", "").startswith("sk-ant-")
+    if provider != "gemini" and has_claude:
+        return _claude(user)
     if os.getenv("GEMINI_API_KEY"):
         return _gemini(user)
-    if os.getenv("ANTHROPIC_API_KEY", "").startswith("sk-ant-"):
+    if has_claude:
         return _claude(user)
     raise SystemExit(
         "\nNo API key found. Put one in services/parser/.env:\n"
-        "  GEMINI_API_KEY=...        (free, aistudio.google.com)\n"
-        "  or ANTHROPIC_API_KEY=sk-ant-...  (paid, console.anthropic.com)\n"
+        "  ANTHROPIC_API_KEY=sk-ant-...  (Claude, console.anthropic.com)\n"
+        "  or GEMINI_API_KEY=...         (free, aistudio.google.com)\n"
     )
 
 
