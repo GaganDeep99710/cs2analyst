@@ -12,6 +12,7 @@ Run:
 import html as _html
 import time
 import traceback
+import urllib.parse
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -23,11 +24,12 @@ from starlette.middleware.sessions import SessionMiddleware
 import context_pack
 import core
 import coach
+import faceit
 import report_html
 import skills as skillmod
 import store
 
-VERSION = "volume-1"
+VERSION = "faceit-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -216,6 +218,70 @@ def _guarded(job, player, p):
         job["error"] = str(e)
 
 
+# ------------------------------------------------------------ faceit sync ---
+SYNCS: dict[int, dict] = {}  # uid -> live progress for the dashboard
+
+
+def faceit_sync(uid: int, max_new: int = 3):
+    """Pull the user's newest FACEIT matches and analyze the unseen ones.
+    Caps at max_new per run to bound Claude spend; records every match id
+    (even skips/failures) so a match is never pulled — or paid for — twice."""
+    st = SYNCS[uid] = {"status": "running", "msg": "Fetching your matches…",
+                       "done": 0, "total": 0, "new": 0}
+    try:
+        u = store.user_by_id(uid)
+        pid = u.get("faceit_player_id")
+        if not pid:
+            st.update(status="error", msg="No FACEIT account connected.")
+            return
+        target = (u.get("faceit_nickname") or u.get("ign") or "").strip()
+        seen = store.synced_match_ids(uid)
+        fresh = [m for m in faceit.recent_matches(pid, limit=10)
+                 if m["match_id"] not in seen][:max_new]
+        st["total"] = len(fresh)
+        if not fresh:
+            st.update(status="done",
+                      msg="You're already up to date — no new matches.")
+            return
+        for m in fresh:
+            mid = m["match_id"]
+            st["msg"] = f"Analyzing match {st['done'] + 1} of {len(fresh)}…"
+            dest = UPLOAD / f"fc_{mid[:12]}.dem"
+            try:
+                url = faceit.demo_url(mid)
+                if not url:
+                    store.mark_faceit_match(uid, mid, None, "no-demo")
+                    st["done"] += 1
+                    continue
+                faceit.download_demo(url, dest)
+                p = core.load(str(dest))
+                players = core.scoreboard(p)["player"].tolist()
+                match = [pl for pl in players if pl.lower() == target.lower()]
+                if not match:
+                    store.mark_faceit_match(uid, mid, None, "no-match")
+                    st["done"] += 1
+                    continue
+                job = {"id": uuid.uuid4().hex[:12], "path": str(dest),
+                       "user_id": uid}
+                _run(job, match[0], p=p)
+                store.mark_faceit_match(uid, mid, job["id"], "done")
+                st["new"] += 1
+            except Exception as e:  # noqa: BLE001
+                traceback.print_exc()
+                store.mark_faceit_match(uid, mid, None, "error")
+            finally:
+                dest.unlink(missing_ok=True)
+                dest.with_name(dest.stem + "_raw.dem").unlink(missing_ok=True)
+                st["done"] += 1
+        st.update(status="done",
+                  msg=f"Synced {st['new']} new match(es) from FACEIT.")
+    except faceit.FaceitError as e:
+        st.update(status="error", msg=str(e))
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        st.update(status="error", msg=str(e))
+
+
 # --------------------------------------------------------------------- auth ---
 @app.get("/signup", response_class=HTMLResponse)
 def signup_form(request: Request, err: str = ""):
@@ -276,8 +342,45 @@ def logout(request: Request):
 
 
 # ---------------------------------------------------------------- dashboard ---
+def _faceit_card(u: dict) -> str:
+    if not faceit.enabled():
+        return ""
+    nick = u.get("faceit_nickname")
+    st = SYNCS.get(u["id"])
+    banner = ""
+    if st:
+        cls = "err" if st["status"] == "error" else "small"
+        prog = (f" ({st['done']}/{st['total']})"
+                if st["status"] == "running" and st["total"] else "")
+        banner = f"<p class={cls} style='margin:10px 0 0'>{esc(st['msg'])}{prog}</p>"
+    if nick:
+        return (
+            "<div class=card style='margin-bottom:26px'>"
+            "<p class=h style='margin:0 0 4px'>FACEIT connected</p>"
+            f"<p class=small style='margin:0'>Pulling matches for "
+            f"<b style='color:var(--ink)'>{esc(nick)}</b> · "
+            "up to 3 newest per sync</p>"
+            "<div class=rrow style='margin-top:14px'>"
+            "<form method=post action=/sync/faceit>"
+            "<button type=submit>Sync new matches</button></form>"
+            "<form method=post action=/disconnect/faceit>"
+            "<button class='ghost' type=submit>Disconnect</button></form>"
+            f"</div>{banner}</div>")
+    return (
+        "<div class=card style='margin-bottom:26px'>"
+        "<p class=h style='margin:0 0 4px'>Connect FACEIT</p>"
+        "<p class=small style='margin:0'>Auto-pull your recent FACEIT "
+        "matches — no manual demo downloads.</p>"
+        "<form method=post action=/connect/faceit style='margin-top:12px;"
+        "display:flex;gap:10px;flex-wrap:wrap'>"
+        "<input name=nickname placeholder='your FACEIT nickname' required "
+        "style='flex:1;min-width:200px'>"
+        "<button type=submit>Connect</button></form>"
+        f"{banner}</div>")
+
+
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
+def home(request: Request, msg: str = "", err: str = ""):
     u = user(request)
     if not u:
         return shell(request,
@@ -297,10 +400,15 @@ def home(request: Request):
     else:
         history = ("<div class=empty>No matches yet — upload your first demo "
                    "above to start your log.</div>")
+    banner = ""
+    if err:
+        banner = f"<p class=err style='margin:0 0 18px'>{esc(err)}</p>"
+    elif msg:
+        banner = f"<p class=small style='margin:0 0 18px'>{esc(msg)}</p>"
     return shell(request,
         "<div class=wrap>"
         f"<p class=eyebrow>Welcome, {esc(u['ign'] or u['email'])}</p>"
-        "<h1>Your matches</h1>"
+        "<h1>Your matches</h1>" + banner +
         "<div class=card style='margin-bottom:26px'>"
         "<form id=f method=post action=/analyze enctype=multipart/form-data>"
         "<div class=drop id=drop><p class=big id=fname>Drop a demo to analyze</p>"
@@ -308,8 +416,8 @@ def home(request: Request):
         "</div>"
         "<input type=file id=file name=file accept='.dem,.zst,.gz,.bz2' required>"
         "<button class=full id=go type=submit>Analyze new match</button>"
-        "</form></div>" + _progression(reports) + history + "</div>"
-        + _UPLOAD_JS)
+        "</form></div>" + _faceit_card(u) + _progression(reports) + history
+        + "</div>" + _UPLOAD_JS)
 
 
 def _report_card(r: dict) -> str:
@@ -411,6 +519,44 @@ async def analyze(request: Request, file: UploadFile, name: str = Form("")):
     return RedirectResponse(f"/j/{job_id}", 303)
 
 
+@app.post("/connect/faceit")
+def connect_faceit(request: Request, nickname: str = Form(...)):
+    u = user(request)
+    if not u:
+        return RedirectResponse("/login", 303)
+    try:
+        pl = faceit.find_player(nickname.strip())
+    except faceit.FaceitError as e:
+        return RedirectResponse(
+            f"/?err={urllib.parse.quote(str(e))}", 303)
+    store.set_faceit(u["id"], pl["nickname"], pl["player_id"])
+    return RedirectResponse(
+        f"/?msg={urllib.parse.quote('FACEIT connected as ' + pl['nickname'])}",
+        303)
+
+
+@app.post("/disconnect/faceit")
+def disconnect_faceit(request: Request):
+    u = user(request)
+    if u:
+        store.clear_faceit(u["id"])
+    return RedirectResponse("/", 303)
+
+
+@app.post("/sync/faceit")
+def sync_faceit(request: Request):
+    u = user(request)
+    if not u:
+        return RedirectResponse("/login", 303)
+    if not u.get("faceit_player_id"):
+        return RedirectResponse("/?err=Connect+a+FACEIT+account+first", 303)
+    if SYNCS.get(u["id"], {}).get("status") != "running":
+        POOL.submit(faceit_sync, u["id"])
+    return RedirectResponse(
+        "/?msg=" + urllib.parse.quote(
+            "Syncing your FACEIT matches — refresh in a minute."), 303)
+
+
 @app.post("/pick/{job_id}")
 def pick(request: Request, job_id: str, player: str = Form(...)):
     u = user(request)
@@ -450,6 +596,7 @@ def version():
         "has_anthropic_key": has_claude,
         "has_gemini_key": has_gemini,
         "anthropic_installed": anthropic_installed,
+        "faceit_enabled": faceit.enabled(),
         "storage": store.stats(),
     }
 

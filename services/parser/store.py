@@ -68,6 +68,22 @@ def init() -> None:
             c.execute("ALTER TABLE reports ADD COLUMN skills TEXT")
         except sqlite3.OperationalError:
             pass
+        # connected FACEIT account (added later)
+        for col in ("faceit_nickname TEXT", "faceit_player_id TEXT"):
+            try:
+                c.execute(f"ALTER TABLE users ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
+        # one row per FACEIT match we've pulled, so we never re-pull/re-spend
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS faceit_matches(
+            user_id INTEGER NOT NULL,
+            match_id TEXT NOT NULL,
+            report_id TEXT,
+            status TEXT,
+            created_at REAL,
+            PRIMARY KEY(user_id, match_id)
+        )""")
 
 
 # ---- auth --------------------------------------------------------------
@@ -122,6 +138,36 @@ def user_by_id(uid: int) -> dict | None:
 def set_ign(uid: int, ign: str) -> None:
     with _conn() as c:
         c.execute("UPDATE users SET ign=? WHERE id=?", (ign.strip(), uid))
+
+
+# ---- FACEIT connection -------------------------------------------------
+def set_faceit(uid: int, nickname: str, player_id: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE users SET faceit_nickname=?, faceit_player_id=? "
+                  "WHERE id=?", (nickname, player_id, uid))
+
+
+def clear_faceit(uid: int) -> None:
+    with _conn() as c:
+        c.execute("UPDATE users SET faceit_nickname=NULL, "
+                  "faceit_player_id=NULL WHERE id=?", (uid,))
+
+
+def synced_match_ids(uid: int) -> set[str]:
+    with _conn() as c:
+        rows = c.execute("SELECT match_id FROM faceit_matches WHERE user_id=?",
+                         (uid,)).fetchall()
+        return {r[0] for r in rows}
+
+
+def mark_faceit_match(uid: int, match_id: str, report_id: str | None,
+                      status: str) -> None:
+    """Record a pulled match (even failures) so a sync never re-pulls it."""
+    with _conn() as c:
+        c.execute("INSERT OR REPLACE INTO faceit_matches"
+                  "(user_id,match_id,report_id,status,created_at) "
+                  "VALUES(?,?,?,?,?)",
+                  (uid, match_id, report_id, status, time.time()))
 
 
 # ---- reports -----------------------------------------------------------
