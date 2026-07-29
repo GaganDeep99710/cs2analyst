@@ -27,7 +27,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "vol-check-1"
+VERSION = "claude-live-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -426,7 +426,25 @@ def pick(request: Request, job_id: str, player: str = Form(...)):
 
 @app.get("/version")
 def version():
-    return {"version": VERSION}
+    import os
+    has_claude = os.getenv("ANTHROPIC_API_KEY", "").startswith("sk-ant-")
+    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+    forced = os.getenv("LLM_PROVIDER", "").lower()
+    if forced != "gemini" and has_claude:
+        active, model = "claude", coach.CLAUDE_MODEL
+    elif has_gemini:
+        active, model = "gemini", coach.GEMINI_MODEL
+    elif has_claude:
+        active, model = "claude", coach.CLAUDE_MODEL
+    else:
+        active, model = "none", None
+    return {
+        "version": VERSION,
+        "llm_provider": active,
+        "llm_model": model,
+        "has_anthropic_key": has_claude,
+        "has_gemini_key": has_gemini,
+    }
 
 
 @app.get("/api/status/{job_id}")
