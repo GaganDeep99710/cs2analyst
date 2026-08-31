@@ -34,3 +34,7 @@ node_modules/
 callouts/extract/
 callouts/inferno.json
 callouts/map-data.json
+
+# deploy secrets (server-only, never commit)
+deploy/secrets.env
+deploy/.env

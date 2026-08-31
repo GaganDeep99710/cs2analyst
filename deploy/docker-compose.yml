@@ -1,0 +1,38 @@
+# Production stack: the app behind Caddy (automatic HTTPS via Let's Encrypt).
+# Secrets come from ./secrets.env (root-owned, chmod 600, never committed).
+# DOMAIN / ACME_EMAIL come from ./.env (compose auto-loads it for ${...}).
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    env_file: ./secrets.env        # ANTHROPIC/GEMINI/FACEIT keys live here
+    environment:
+      - DATA_DIR=/app/data          # SQLite + session secret persist here
+    volumes:
+      - appdata:/app/data
+    expose:
+      - "8000"                      # internal only — never published to host
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - app
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env}
+      - ACME_EMAIL=${ACME_EMAIL:?set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data            # persisted certs — don't delete
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  appdata:
+  caddy_data:
+  caddy_config:

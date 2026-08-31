@@ -1,0 +1,20 @@
+# Automatic HTTPS. Caddy fetches + renews a Let's Encrypt cert for DOMAIN,
+# redirects http->https, and reverse-proxies to the app container.
+# DOMAIN and ACME_EMAIL are injected from the environment (see .env).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN}, www.{$DOMAIN} {
+	encode gzip zstd
+	reverse_proxy app:8000
+
+	# sensible security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
