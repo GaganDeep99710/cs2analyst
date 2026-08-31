@@ -18,7 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
+                               Response)
 from starlette.middleware.sessions import SessionMiddleware
 
 import context_pack
@@ -29,7 +30,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "faceit-1"
+VERSION = "logo-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -66,8 +67,11 @@ background-size:44px 44px;background-position:center}
 a{color:var(--ct);text-decoration:none}
 .nav{display:flex;align-items:center;gap:14px;max-width:960px;margin:0 auto;
 padding:18px 18px 0}
-.brand{font-family:var(--mono);font-size:13px;letter-spacing:.22em;
+.brand{display:inline-flex;align-items:center;gap:9px;
+font-family:var(--mono);font-size:13px;letter-spacing:.22em;
 text-transform:uppercase;color:var(--ct);font-weight:700}
+.brand .logo{width:24px;height:24px;flex:0 0 auto;
+filter:drop-shadow(0 0 6px rgba(90,169,240,.35))}
 .nav .sp{flex:1}
 .nav .who{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .wrap{max-width:960px;margin:0 auto;padding:clamp(22px,5vw,46px) 18px}
@@ -152,6 +156,32 @@ text-align:center}
 """
 
 
+# crosshair mark — inherits currentColor (brand blue) in the nav
+LOGO_MARK = (
+    '<svg class=logo viewBox="0 0 32 32" fill="none" stroke="currentColor" '
+    'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+    '<circle cx="16" cy="16" r="12.5" stroke-width="2"/>'
+    '<line x1="16" y1="2.5" x2="16" y2="10" stroke-width="2.6" stroke-linecap="round"/>'
+    '<line x1="16" y1="22" x2="16" y2="29.5" stroke-width="2.6" stroke-linecap="round"/>'
+    '<line x1="2.5" y1="16" x2="10" y2="16" stroke-width="2.6" stroke-linecap="round"/>'
+    '<line x1="22" y1="16" x2="29.5" y2="16" stroke-width="2.6" stroke-linecap="round"/>'
+    '<circle cx="16" cy="16" r="2.6" fill="currentColor" stroke="none"/></svg>')
+
+# standalone favicon (dark tile + blue crosshair, reads at 16px)
+FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    '<rect width="32" height="32" rx="7" fill="#0b0e13"/>'
+    '<g fill="none" stroke="#5aa9f0" stroke-linecap="round">'
+    '<circle cx="16" cy="16" r="10.5" stroke-width="2"/>'
+    '<line x1="16" y1="3.5" x2="16" y2="9" stroke-width="2.4"/>'
+    '<line x1="16" y1="23" x2="16" y2="28.5" stroke-width="2.4"/>'
+    '<line x1="3.5" y1="16" x2="9" y2="16" stroke-width="2.4"/>'
+    '<line x1="23" y1="16" x2="28.5" y2="16" stroke-width="2.4"/></g>'
+    '<circle cx="16" cy="16" r="2.6" fill="#5aa9f0"/></svg>')
+
+FAVICON_LINK = '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
+
+
 def shell(request: Request, body: str, nav: bool = True) -> str:
     u = user(request)
     navbar = ""
@@ -160,11 +190,13 @@ def shell(request: Request, body: str, nav: bool = True) -> str:
             f"<span class=who>{esc(u['ign'] or u['email'])}</span>"
             "<a class=btn ghost href=/logout>Log out</a>" if u else
             "<a href=/login>Log in</a> <a class=btn href=/signup>Sign up</a>")
-        navbar = (f"<div class=nav><a class=brand href=/>AI CS2 Analyst</a>"
+        navbar = (f"<div class=nav><a class=brand href=/>{LOGO_MARK}"
+                  f"<span>AI CS2 Analyst</span></a>"
                   f"<span class=sp></span>{right}</div>")
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>AI CS2 Analyst</title><style>{STYLE}</style></head><body>"
+            f"<title>AI CS2 Analyst — CS2 demo coaching</title>{FAVICON_LINK}"
+            f"<style>{STYLE}</style></head><body>"
             f"{navbar}{body}</body></html>")
 
 
@@ -570,6 +602,18 @@ def pick(request: Request, job_id: str, player: str = Form(...)):
     return RedirectResponse(f"/j/{job_id}", 303)
 
 
+@app.get("/favicon.svg")
+def favicon_svg():
+    return Response(FAVICON_SVG, media_type="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/favicon.ico")
+def favicon_ico():
+    # browsers that ignore the <link> and probe /favicon.ico still get the mark
+    return Response(FAVICON_SVG, media_type="image/svg+xml")
+
+
 @app.get("/version")
 def version():
     import os
@@ -679,7 +723,8 @@ def report_view(request: Request, rid: str):
     if not r:
         return shell(request, "<div class='wrap narrow'><p class=err>Report not "
                      "found.</p><p><a href=/>Back to your matches</a></p></div>")
-    topbar = ("<div class=nav><a class=brand href=/>AI CS2 Analyst</a>"
+    topbar = (f"<div class=nav><a class=brand href=/>{LOGO_MARK}"
+              "<span>AI CS2 Analyst</span></a>"
               "<span class=sp></span><a class='btn ghost' href=/>← My matches</a>"
               f"<form method=post action=/delete/{esc(rid)} "
               "onsubmit=\"return confirm('Delete this report?')\">"
@@ -687,7 +732,8 @@ def report_view(request: Request, rid: str):
     return HTMLResponse(
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        f"<style>{STYLE}</style></head><body>{topbar}{r['html']}</body></html>")
+        f"{FAVICON_LINK}<style>{STYLE}</style></head><body>"
+        f"{topbar}{r['html']}</body></html>")
 
 
 @app.post("/delete/{rid}")
