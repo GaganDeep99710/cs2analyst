@@ -1,16 +1,18 @@
 # Automatic HTTPS. Caddy fetches + renews a Let's Encrypt cert for DOMAIN,
 # redirects http->https, and reverse-proxies to the app container.
 # DOMAIN and ACME_EMAIL are injected from the environment (see .env).
+#
+# Apex-only: add `, www.{$DOMAIN}` after {$DOMAIN} ONLY once a www A record
+# exists in DNS — otherwise the www challenge NXDOMAINs and blocks the cert.
 
 {
 	email {$ACME_EMAIL}
 }
 
-{$DOMAIN}, www.{$DOMAIN} {
+{$DOMAIN} {
 	encode gzip zstd
 	reverse_proxy app:8000
 
-	# sensible security headers
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
