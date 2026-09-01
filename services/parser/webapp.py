@@ -9,7 +9,10 @@ Run:
     ./.venv/Scripts/python.exe -m uvicorn webapp:app --port 8000
 """
 
+import datetime
+import hashlib
 import html as _html
+import os
 import time
 import traceback
 import urllib.parse
@@ -30,7 +33,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "retry-1"
+VERSION = "stats-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -41,6 +44,49 @@ JOBS: dict[str, dict] = {}
 POOL = ThreadPoolExecutor(max_workers=1)
 UPLOAD = Path(__file__).parents[2] / "uploads"
 UPLOAD.mkdir(exist_ok=True)
+
+OUR_HOST = "cs2demoanalysis.com"  # internal navigations don't count as referrers
+_TRACK_SKIP = ("/api", "/favicon", "/version", "/stats", "/static", "/logout")
+
+
+def _ref_label(request: Request) -> str:
+    """A clean referrer label: an explicit ?ref= wins (for UTM-style links),
+    else the external site that linked here, else '(direct)'."""
+    tag = (request.query_params.get("ref") or "").strip().lower()
+    if tag:
+        return tag[:60]
+    raw = request.headers.get("referer", "")
+    if raw:
+        host = urllib.parse.urlparse(raw).netloc.lower().replace("www.", "")
+        if host and OUR_HOST not in host:
+            return host[:60]
+    return "(direct)"
+
+
+@app.middleware("http")
+async def _track(request: Request, call_next):
+    resp = await call_next(request)
+    try:
+        p = request.url.path
+        if (request.method == "GET" and resp.status_code < 400
+                and not any(p.startswith(s) for s in _TRACK_SKIP)):
+            xff = request.headers.get("x-forwarded-for", "")
+            ip = (xff.split(",")[0].strip() if xff
+                  else (request.client.host if request.client else ""))
+            visitor = hashlib.sha256(
+                (store.session_secret() + "|" + ip).encode()).hexdigest()[:16]
+            ts = time.time()
+            day = datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+            store.record_view(ts, day, p[:200], _ref_label(request), visitor)
+    except Exception:  # analytics must never break a page
+        pass
+    return resp
+
+
+def is_admin(request: Request) -> bool:
+    u = user(request)
+    admin = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    return bool(u and admin and u["email"].lower() == admin)
 
 
 def esc(s) -> str:
@@ -612,6 +658,91 @@ def favicon_svg():
 def favicon_ico():
     # browsers that ignore the <link> and probe /favicon.ico still get the mark
     return Response(FAVICON_SVG, media_type="image/svg+xml")
+
+
+def _bars(days: list[str], vals: list[int], w: int = 640, h: int = 150) -> str:
+    hi = max(vals) or 1
+    n = len(vals)
+    bw = w / n
+    bars = ""
+    for i, (d, v) in enumerate(zip(days, vals)):
+        bh = (v / hi) * (h - 34)
+        x = i * bw + bw * 0.16
+        bwi = bw * 0.68
+        y = h - 22 - bh
+        lab = d[5:]  # MM-DD
+        bars += (
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bwi:.1f}" height="{bh:.1f}" '
+            f'rx="3" fill="var(--ct)" opacity="0.85"><title>{esc(d)}: {v}'
+            f'</title></rect>'
+            f'<text x="{x + bwi / 2:.1f}" y="{y - 5:.1f}" text-anchor="middle" '
+            f'font-family="var(--mono)" font-size="10" fill="var(--muted)">'
+            f'{v if v else ""}</text>'
+            f'<text x="{x + bwi / 2:.1f}" y="{h - 6:.1f}" text-anchor="middle" '
+            f'font-family="var(--mono)" font-size="9" fill="var(--faint)">{lab}'
+            f'</text>')
+    return (f'<svg viewBox="0 0 {w} {h}" width="100%" '
+            f'style="max-width:{w}px">{bars}</svg>')
+
+
+@app.get("/stats", response_class=HTMLResponse)
+def stats_dashboard(request: Request):
+    if not is_admin(request):
+        if not user(request):
+            return RedirectResponse("/login", 303)
+        return shell(request, "<div class='wrap narrow'><h1>Not found</h1>"
+                     "<p class=small>This page is admin-only.</p></div>")
+
+    s = store.traffic_stats()
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    days = [(datetime.datetime.utcnow() - datetime.timedelta(days=k))
+            .strftime("%Y-%m-%d") for k in range(13, -1, -1)]
+    views = [s["by_day"].get(d, {}).get("v", 0) for d in days]
+    visitors = [s["by_day"].get(d, {}).get("u", 0) for d in days]
+    signups_14 = sum(s["signups_by_day"].get(d, 0) for d in days)
+    tv = s["by_day"].get(today, {})
+
+    def tile(label, value, sub=""):
+        subhtml = f"<div class=small style='margin-top:4px'>{esc(sub)}</div>" if sub else ""
+        return (f"<div class=card style='padding:18px 20px'>"
+                f"<div class=small style='letter-spacing:.14em;text-transform:uppercase'>{esc(label)}</div>"
+                f"<div style='font-size:34px;font-weight:760;font-variant-numeric:tabular-nums;margin-top:6px'>{esc(value)}</div>"
+                f"{subhtml}</div>")
+
+    tiles = ("<div class=grid style='grid-template-columns:repeat(auto-fill,minmax(190px,1fr))'>"
+             + tile("Visitors (all-time)", s["total_visitors"], f"{s['total_views']} pageviews")
+             + tile("Today", tv.get("u", 0), f"{tv.get('v', 0)} views")
+             + tile("Signups (14d)", signups_14, f"{s['users_total']} total")
+             + tile("Reports made", s["reports_total"])
+             + "</div>")
+
+    refs = "".join(
+        f"<tr><td style='padding:7px 10px'>{esc(r)}</td>"
+        f"<td style='padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums'>{u}</td>"
+        f"<td style='padding:7px 10px;text-align:right;color:var(--faint);font-variant-numeric:tabular-nums'>{v}</td></tr>"
+        for r, v, u in s["top_referrers"]) or "<tr><td class=small style='padding:10px'>No visits yet</td></tr>"
+    paths = "".join(
+        f"<tr><td style='padding:7px 10px'>{esc(p)}</td>"
+        f"<td style='padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums'>{v}</td></tr>"
+        for p, v, u in s["top_paths"]) or "<tr><td class=small style='padding:10px'>—</td></tr>"
+
+    thead = "font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);text-align:left;padding:7px 10px"
+    body = (
+        "<div class=wrap>"
+        "<p class=eyebrow>Analytics</p><h1>Traffic</h1>"
+        "<p class=lede>Anonymous, cookie-free. Add <span style='font-family:var(--mono);color:var(--ct)'>?ref=reddit</span> to your links to tag campaigns.</p>"
+        + tiles +
+        "<div class=card style='margin-top:22px'><p class=small style='margin:0 0 10px'>Last 14 days · visitors</p>"
+        + _bars(days, visitors) + "</div>"
+        "<div class=grid style='grid-template-columns:1fr 1fr;margin-top:22px'>"
+        "<div class=card><p class=small style='margin:0 0 8px'>Top referrers</p>"
+        f"<table style='width:100%;border-collapse:collapse'><tr><th style='{thead}'>Source</th>"
+        f"<th style='{thead};text-align:right'>Visitors</th><th style='{thead};text-align:right'>Views</th></tr>{refs}</table></div>"
+        "<div class=card><p class=small style='margin:0 0 8px'>Top pages</p>"
+        f"<table style='width:100%;border-collapse:collapse'><tr><th style='{thead}'>Path</th>"
+        f"<th style='{thead};text-align:right'>Views</th></tr>{paths}</table></div>"
+        "</div></div>")
+    return shell(request, body)
 
 
 @app.get("/version")

@@ -84,6 +84,14 @@ def init() -> None:
             created_at REAL,
             PRIMARY KEY(user_id, match_id)
         )""")
+        # anonymous, cookie-free traffic log (IPs are hashed before storage)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS pageviews(
+            ts REAL, day TEXT, path TEXT, ref TEXT, visitor TEXT
+        )""")
+        for idx in ("CREATE INDEX IF NOT EXISTS ix_pv_day ON pageviews(day)",
+                    "CREATE INDEX IF NOT EXISTS ix_pv_ref ON pageviews(ref)"):
+            c.execute(idx)
 
 
 # ---- auth --------------------------------------------------------------
@@ -210,3 +218,36 @@ def get_report(rid: str, uid: int) -> dict | None:
 def delete_report(rid: str, uid: int) -> None:
     with _conn() as c:
         c.execute("DELETE FROM reports WHERE id=? AND user_id=?", (rid, uid))
+
+
+# ---- traffic analytics -------------------------------------------------
+def record_view(ts: float, day: str, path: str, ref: str, visitor: str) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO pageviews(ts,day,path,ref,visitor) "
+                  "VALUES(?,?,?,?,?)", (ts, day, path, ref, visitor))
+
+
+def traffic_stats() -> dict:
+    with _conn() as c:
+        tot = c.execute("SELECT COUNT(*) v, COUNT(DISTINCT visitor) u "
+                        "FROM pageviews").fetchone()
+        by_day = {r["day"]: {"v": r["v"], "u": r["u"]} for r in c.execute(
+            "SELECT day, COUNT(*) v, COUNT(DISTINCT visitor) u "
+            "FROM pageviews GROUP BY day").fetchall()}
+        refs = [(r["ref"], r["v"], r["u"]) for r in c.execute(
+            "SELECT ref, COUNT(*) v, COUNT(DISTINCT visitor) u FROM pageviews "
+            "GROUP BY ref ORDER BY u DESC, v DESC LIMIT 12").fetchall()]
+        paths = [(r["path"], r["v"], r["u"]) for r in c.execute(
+            "SELECT path, COUNT(*) v, COUNT(DISTINCT visitor) u FROM pageviews "
+            "GROUP BY path ORDER BY v DESC LIMIT 12").fetchall()]
+        signups = {r["d"]: r["n"] for r in c.execute(
+            "SELECT strftime('%Y-%m-%d', created_at, 'unixepoch') d, "
+            "COUNT(*) n FROM users GROUP BY d").fetchall()}
+        users_total = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        reports_total = c.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
+    return {
+        "total_views": tot["v"], "total_visitors": tot["u"],
+        "by_day": by_day, "top_referrers": refs, "top_paths": paths,
+        "signups_by_day": signups, "users_total": users_total,
+        "reports_total": reports_total,
+    }
