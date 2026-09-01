@@ -30,7 +30,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "logo-1"
+VERSION = "retry-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")

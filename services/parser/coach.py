@@ -17,6 +17,7 @@ Usage:
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -91,12 +92,36 @@ def _user_prompt(pack: dict) -> str:
     )
 
 
+def _retry(fn, tries: int = 4, base: float = 2.0):
+    """Retry an LLM call on transient provider errors (overload / rate limit).
+    Free Gemini in particular 503s under load; a couple of backed-off retries
+    usually succeed. Non-transient errors (bad key, bad request) raise at once."""
+    last = None
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001 — inspect, then re-raise
+            last = e
+            msg = str(e)
+            code = (getattr(e, "code", None)
+                    or getattr(getattr(e, "response", None), "status_code", None))
+            transient = (code in (429, 500, 503, 529)
+                         or any(s in msg for s in ("503", "429", "500", "529",
+                                "UNAVAILABLE", "high demand", "overloaded",
+                                "RESOURCE_EXHAUSTED", "Internal")))
+            if i < tries - 1 and transient:
+                time.sleep(base * (2 ** i))  # 2s, 4s, 8s
+                continue
+            raise
+    raise last  # pragma: no cover
+
+
 def _gemini(user: str) -> tuple[dict, dict]:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    resp = client.models.generate_content(
+    resp = _retry(lambda: client.models.generate_content(
         model=GEMINI_MODEL,
         contents=user,
         config=types.GenerateContentConfig(
@@ -105,7 +130,7 @@ def _gemini(user: str) -> tuple[dict, dict]:
             response_schema=Report,
             temperature=0.6,
         ),
-    )
+    ))
     report = json.loads(resp.text)
     um = resp.usage_metadata
     return report, {
@@ -124,14 +149,14 @@ def _claude(user: str) -> tuple[dict, dict]:
     for d in schema.get("$defs", {}).values():
         d["additionalProperties"] = False
     client = anthropic.Anthropic()
-    resp = client.messages.create(
+    resp = _retry(lambda: client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=8000,  # room for adaptive thinking + the per-death JSON
         thinking={"type": "adaptive"},
         system=SYSTEM,
         output_config={"format": {"type": "json_schema", "schema": schema}},
         messages=[{"role": "user", "content": user}],
-    )
+    ))
     text = next(b.text for b in resp.content if b.type == "text")
     u = resp.usage
     rin, rout = _CLAUDE_RATES.get(CLAUDE_MODEL, (5, 25))
