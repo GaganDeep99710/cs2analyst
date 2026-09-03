@@ -1,0 +1,152 @@
+<div><title>AI CS2 Analyst — c0ldrsg death review, de_inferno</title>
+<style>
+:root{
+  --bg:#0b0e13; --surface:#141821; --surface2:#1b212c; --line:#2a3340;
+  --ink:#e6ebf2; --muted:#8a97a8; --faint:#5b6675;
+  --ct:#5aa9f0; --t:#e0a53d; --good:#3fb950; --crit:#e5484d;
+  --mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+.report{
+  background:var(--bg); color:var(--ink); font-family:var(--sans);
+  min-height:100vh; margin:0; padding:clamp(20px,5vw,56px) 16px; line-height:1.55;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),
+    linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:44px 44px; background-position:center;
+}
+.report::before{content:"";position:fixed;inset:0;background:
+  radial-gradient(120% 80% at 50% -10%,transparent 40%,var(--bg) 100%);
+  pointer-events:none}
+.wrap{max-width:760px;margin:0 auto;position:relative}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--ct);margin:0 0 6px}
+.ticker{font-family:var(--mono);font-size:13px;color:var(--muted);
+  letter-spacing:.04em;margin:0 0 30px}
+.ticker b{color:var(--ink);font-weight:600}
+.sep{color:var(--faint);padding:0 8px}
+
+.verdict{font-size:clamp(15px,2.2vw,17px);line-height:1.6;color:#cdd5e0;
+  margin:0 0 28px}
+.pattern{position:relative;padding:22px 22px 22px 26px;margin:0 0 18px;
+  background:linear-gradient(180deg,var(--surface2),var(--surface));
+  border:1px solid var(--line);border-radius:10px}
+.pattern::before{content:"";position:absolute;left:0;top:14px;bottom:14px;
+  width:3px;background:var(--t);border-radius:3px}
+.pattern .lab{font-family:var(--mono);font-size:11px;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.pattern p{margin:0;font-size:clamp(18px,2.7vw,23px);font-weight:640;
+  letter-spacing:-.01em;text-wrap:balance;line-height:1.36}
+.leak{position:relative;padding:18px 20px 18px 24px;margin:0 0 14px;
+  background:rgba(229,72,77,.06);border:1px solid rgba(229,72,77,.28);
+  border-radius:10px}
+.leak::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;
+  background:var(--crit);border-radius:3px}
+.leak .lab{font-family:var(--mono);font-size:11px;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--crit);margin:0 0 7px}
+.leak p{margin:0;font-size:15px;line-height:1.55;color:var(--ink)}
+.win{position:relative;padding:14px 18px;margin:0 0 30px;
+  background:rgba(63,185,80,.05);border:1px solid rgba(63,185,80,.25);
+  border-radius:10px}
+.win .lab{font-family:var(--mono);font-size:11px;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--good);margin:0 0 6px}
+.win p{margin:0;font-size:14.5px;line-height:1.5;color:#cdd5e0}
+.prio{list-style:none;counter-reset:p;margin:0 0 34px;padding:0;
+  display:flex;flex-direction:column;gap:10px}
+.prio li{counter-increment:p;position:relative;padding:14px 16px 14px 52px;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  font-size:14.5px;color:var(--ink);line-height:1.5}
+.prio li::before{content:counter(p);position:absolute;left:16px;top:12px;
+  width:24px;height:24px;border-radius:6px;background:var(--accent-soft,rgba(90,169,240,.12));
+  color:var(--ct);font-family:var(--mono);font-weight:700;font-size:13px;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid rgba(90,169,240,.35)}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  background:var(--line);border:1px solid var(--line);border-radius:10px;
+  overflow:hidden;margin:0 0 10px}
+.cell{background:var(--surface);padding:14px 12px;text-align:center}
+.cell .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.cell .v{font-family:var(--mono);font-size:clamp(19px,3.6vw,25px);font-weight:700;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.verified{font-family:var(--mono);font-size:11.5px;color:var(--good);
+  letter-spacing:.03em;margin:0 0 36px;display:flex;align-items:center;gap:7px}
+.verified::before{content:"";width:7px;height:7px;border-radius:50%;
+  background:var(--good);box-shadow:0 0 8px var(--good)}
+.radlegend{display:flex;gap:18px;justify-content:center;font-family:var(--mono);
+  font-size:11px;color:var(--muted);margin:6px 0 0}
+.radlegend span{display:flex;align-items:center;gap:6px}
+.lg-you::before{content:"";width:15px;height:3px;background:var(--ct)}
+.lg-goal::before{content:"";width:15px;border-top:2px dashed var(--faint)}
+
+.h{font-family:var(--mono);font-size:12px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 14px;
+  padding-bottom:9px;border-bottom:1px solid var(--line)}
+.rounds{display:flex;flex-direction:column;gap:12px;margin:0 0 34px}
+.rc{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px}
+.rc-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 11px}
+.rlabel{font-family:var(--mono);font-size:13px;font-weight:700;
+  letter-spacing:.02em}
+.rlabel .rd{color:var(--ct)}
+.rmeta{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.loc{color:var(--ct);font-weight:700}
+.spacer{flex:1}
+.chip{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;
+  text-transform:uppercase;border-radius:5px;padding:2px 7px;
+  border:1px solid var(--line);color:var(--muted)}
+.chip.t{color:var(--t);border-color:rgba(224,165,61,.4);background:rgba(224,165,61,.08)}
+.chip.ct{color:var(--ct);border-color:rgba(90,169,240,.4);background:rgba(90,169,240,.08)}
+.chip.crit{color:var(--crit);border-color:rgba(229,72,77,.4);background:rgba(229,72,77,.09)}
+.chip.good{color:var(--good);border-color:rgba(63,185,80,.4);background:rgba(63,185,80,.08)}
+.what{margin:0 0 12px;font-size:14.5px;color:#cdd5e0}
+.line{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:baseline;
+  margin:0 0 8px}
+.tag{font-family:var(--mono);font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;padding-top:2px}
+.tag.m{color:var(--crit)}
+.tag.f{color:var(--good)}
+.line p{margin:0;font-size:14px;color:var(--ink)}
+.line.fix p{color:#cdd5e0}
+
+.foot{border-top:1px solid var(--line);padding-top:22px;text-align:center}
+.cta{font-size:17px;font-weight:650;letter-spacing:-.01em;margin:0 0 6px}
+.cta b{color:var(--ct)}
+.sub{font-family:var(--mono);font-size:12px;color:var(--muted);margin:0 0 14px}
+.credit{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.04em}
+@media(max-width:480px){.stats{grid-template-columns:repeat(2,1fr)}}
+@media(prefers-reduced-motion:no-preference){
+  .wrap>*{animation:rise .45s cubic-bezier(.2,.7,.2,1) backwards}
+  .wrap>*:nth-child(2){animation-delay:.04s}
+  .wrap>*:nth-child(3){animation-delay:.08s}
+  .wrap>*:nth-child(n+4){animation-delay:.12s}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}}}
+</style>
+<div class="report"><div class="wrap">
+  <p class="eyebrow">AI CS2 Analyst // Death Review</p>
+  <p class="ticker"><b>c0ldrsg</b><span class="sep">/</span>de_inferno<span class="sep">/</span>FACEIT 5v5 MR12<span class="sep">/</span>19 rounds</p>
+
+  <p class="verdict">You are a Level-6-ish rifler with real aim (41% HS, 96.8 ADR) but your entry is a liability (Entry 20) — you keep opening rounds you should let develop.</p>
+
+  <div class="stats"><div class="cell"><div class="k">K / D / A</div><div class="v">17/13/7</div></div><div class="cell"><div class="k">ADR</div><div class="v">96.8</div></div><div class="cell"><div class="k">HS%</div><div class="v">41%</div></div><div class="cell"><div class="k">K / D</div><div class="v">1.31</div></div></div>
+  <p class="verified">Scoreboard verified against FACEIT's own numbers</p>
+
+  <p class="h">Skill Profile — this match</p><div class="card" style="padding:16px 18px 14px"><svg viewBox="-46 0 432 300" width="100%" style="max-width:440px;display:block;margin:2px auto 0"><polygon points="170.0,125.0 191.7,137.5 191.7,162.5 170.0,175.0 148.3,162.5 148.3,137.5" fill="none" stroke="var(--line)" stroke-width="1"/><polygon points="170.0,100.0 213.3,125.0 213.3,175.0 170.0,200.0 126.7,175.0 126.7,125.0" fill="none" stroke="var(--line)" stroke-width="1"/><polygon points="170.0,75.0 235.0,112.5 235.0,187.5 170.0,225.0 105.0,187.5 105.0,112.5" fill="none" stroke="var(--line)" stroke-width="1"/><polygon points="170.0,50.0 256.6,100.0 256.6,200.0 170.0,250.0 83.4,200.0 83.4,100.0" fill="none" stroke="var(--line)" stroke-width="1"/><line x1="170" y1="150" x2="170.0" y2="50.0" stroke="var(--line)" stroke-width="1"/><line x1="170" y1="150" x2="256.6" y2="100.0" stroke="var(--line)" stroke-width="1"/><line x1="170" y1="150" x2="256.6" y2="200.0" stroke="var(--line)" stroke-width="1"/><line x1="170" y1="150" x2="170.0" y2="250.0" stroke="var(--line)" stroke-width="1"/><line x1="170" y1="150" x2="83.4" y2="200.0" stroke="var(--line)" stroke-width="1"/><line x1="170" y1="150" x2="83.4" y2="100.0" stroke="var(--line)" stroke-width="1"/><polygon points="170.0,72.0 235.0,112.5 232.4,186.0 170.0,220.0 105.0,187.5 105.0,112.5" fill="none" stroke="var(--faint)" stroke-width="1.5" stroke-dasharray="4 3"/><polygon points="170.0,89.0 220.2,121.0 204.6,170.0 170.0,170.0 129.3,173.5 123.2,123.0" fill="rgba(90,169,240,.18)" stroke="var(--ct)" stroke-width="2"/><circle cx="170.0" cy="89.0" r="2.6" fill="var(--ct)"/><circle cx="220.2" cy="121.0" r="2.6" fill="var(--ct)"/><circle cx="204.6" cy="170.0" r="2.6" fill="var(--ct)"/><circle cx="170.0" cy="170.0" r="2.6" fill="var(--ct)"/><circle cx="129.3" cy="173.5" r="2.6" fill="var(--ct)"/><circle cx="123.2" cy="123.0" r="2.6" fill="var(--ct)"/><text x="170.0" y="30.0" text-anchor="middle" dominant-baseline="middle" font-family="var(--mono)" font-size="10.5" fill="var(--muted)">Aim <tspan fill="var(--ink)" font-weight="700">61</tspan></text><text x="273.9" y="90.0" text-anchor="start" dominant-baseline="middle" font-family="var(--mono)" font-size="10.5" fill="var(--muted)">Fragging <tspan fill="var(--ink)" font-weight="700">58</tspan></text><text x="273.9" y="210.0" text-anchor="start" dominant-baseline="middle" font-family="var(--mono)" font-size="10.5" fill="var(--muted)">Trading <tspan fill="var(--ink)" font-weight="700">40</tspan></text><text x="170.0" y="270.0" text-anchor="middle" dominant-baseline="middle" font-family="var(--mono)" font-size="10.5" fill="var(--muted)">Entry <tspan fill="var(--ink)" font-weight="700">20</tspan></text><text x="66.1" y="210.0" text-anchor="end" dominant-baseline="middle" font-family="var(--mono)" font-size="10.5" fill="var(--muted)">Utility <tspan fill="var(--ink)" font-weight="700">47</tspan></text><text x="66.1" y="90.0" text-anchor="end" dominant-baseline="middle" font-family="var(--mono)" font-size="10.5" fill="var(--muted)">Positioning <tspan fill="var(--ink)" font-weight="700">54</tspan></text></svg><p class="radlegend"><span class="lg-you">You</span><span class="lg-goal">Goal</span></p></div>
+
+  <div class="pattern"><p class="lab">The Pattern</p>
+    <p>You throw man-advantage rounds by dry-peeking.</p></div>
+  <div class="leak"><p class="lab">Your biggest leak</p><p>Dry entries. In rounds 9, 11 and 14 you took the opening duel with util unthrown and lost all three for ~0 damage — that is 3 rounds your team started 4v5.</p></div>
+  <div class="win"><p class="lab">What's working</p><p>When you hold, you win: multiple 60-88 damage trades where you closed the fight.</p></div>
+
+  <p class="h">Every death, and how to fix it</p>
+  <div class="rounds"><div class="rc"><div class="rc-top"><span class="rlabel">ROUND <span class="rd">09</span></span><span class="rmeta"><span class="loc">Underpass</span> · T · 14s · 5v5</span><span class="spacer"></span><span class="chip t">Opening duel</span><span class="chip crit">No trade</span></div><p class="what">Opening duel at Underpass, 5v5, you swung dry into an M4 for 0 damage.</p><div class="line"><span class="tag m">Mistake</span><p>You entered with a flash and HE still in the bag — you gave the defender a free, even fight.</p></div><div class="line fix"><span class="tag f">Fix</span><p>Pop the flash over Underpass, wait for the pop, then swing — never take first contact dry.</p></div></div></div>
+
+  <p class="h">Fix these first</p><ol class="prio"><li>Stop dry-entering: one util before every opening peek.</li><li>Deathmatch 20 min/day for crosshair placement at common angles.</li><li>Watch your Banana over-peeks when up a man.</li></ol>
+
+  <div class="foot">
+    <p class="cta">Every death you took, diagnosed — <b>what went wrong and how to fix it.</b></p>
+    <p class="sub">Automated from one .dem file. No stats to decode.</p>
+    <p class="credit">AI CS2 Analyst · generated by test</p>
+  </div>
+</div></div></div>

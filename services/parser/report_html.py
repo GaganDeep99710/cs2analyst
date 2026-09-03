@@ -57,7 +57,9 @@ CSS = """
 .ticker b{color:var(--ink);font-weight:600}
 .sep{color:var(--faint);padding:0 8px}
 
-.pattern{position:relative;padding:22px 22px 22px 26px;margin:0 0 26px;
+.verdict{font-size:clamp(15px,2.2vw,17px);line-height:1.6;color:#cdd5e0;
+  margin:0 0 28px}
+.pattern{position:relative;padding:22px 22px 22px 26px;margin:0 0 18px;
   background:linear-gradient(180deg,var(--surface2),var(--surface));
   border:1px solid var(--line);border-radius:10px}
 .pattern::before{content:"";position:absolute;left:0;top:14px;bottom:14px;
@@ -66,6 +68,30 @@ CSS = """
   text-transform:uppercase;color:var(--muted);margin:0 0 8px}
 .pattern p{margin:0;font-size:clamp(18px,2.7vw,23px);font-weight:640;
   letter-spacing:-.01em;text-wrap:balance;line-height:1.36}
+.leak{position:relative;padding:18px 20px 18px 24px;margin:0 0 14px;
+  background:rgba(229,72,77,.06);border:1px solid rgba(229,72,77,.28);
+  border-radius:10px}
+.leak::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;
+  background:var(--crit);border-radius:3px}
+.leak .lab{font-family:var(--mono);font-size:11px;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--crit);margin:0 0 7px}
+.leak p{margin:0;font-size:15px;line-height:1.55;color:var(--ink)}
+.win{position:relative;padding:14px 18px;margin:0 0 30px;
+  background:rgba(63,185,80,.05);border:1px solid rgba(63,185,80,.25);
+  border-radius:10px}
+.win .lab{font-family:var(--mono);font-size:11px;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--good);margin:0 0 6px}
+.win p{margin:0;font-size:14.5px;line-height:1.5;color:#cdd5e0}
+.prio{list-style:none;counter-reset:p;margin:0 0 34px;padding:0;
+  display:flex;flex-direction:column;gap:10px}
+.prio li{counter-increment:p;position:relative;padding:14px 16px 14px 52px;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  font-size:14.5px;color:var(--ink);line-height:1.5}
+.prio li::before{content:counter(p);position:absolute;left:16px;top:12px;
+  width:24px;height:24px;border-radius:6px;background:var(--accent-soft,rgba(90,169,240,.12));
+  color:var(--ct);font-family:var(--mono);font-weight:700;font-size:13px;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid rgba(90,169,240,.35)}
 
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
   background:var(--line);border:1px solid var(--line);border-radius:10px;
@@ -268,6 +294,23 @@ def render(pack: dict, report: dict, meta: dict) -> str:
             f'<p>{esc(note["how_to_improve"])}</p></div></div>'
         )
 
+    verdict_html = (f'<p class="verdict">{esc(report["verdict"])}</p>'
+                    if report.get("verdict") else "")
+    leak_html = (
+        f'<div class="leak"><p class="lab">Your biggest leak</p>'
+        f'<p>{esc(report["biggest_leak"])}</p></div>'
+        if report.get("biggest_leak") else "")
+    strength_html = (
+        f'<div class="win"><p class="lab">What\'s working</p>'
+        f'<p>{esc(report["strength"])}</p></div>'
+        if report.get("strength") else "")
+    prios = report.get("priorities") or []
+    prio_html = ""
+    if prios:
+        items = "".join(f"<li>{esc(p)}</li>" for p in prios)
+        prio_html = (f'<p class="h">Fix these first</p>'
+                     f'<ol class="prio">{items}</ol>')
+
     return f"""<title>AI CS2 Analyst — {esc(ident['player'])} death review, \
 {esc(ident['map'])}</title>
 <style>{CSS}</style>
@@ -277,16 +320,22 @@ def render(pack: dict, report: dict, meta: dict) -> str:
 {esc(ident['map'])}<span class="sep">/</span>{esc(ident['mode'])}\
 <span class="sep">/</span>{esc(ident['rounds_played'])} rounds</p>
 
-  <div class="pattern"><p class="lab">The Pattern</p>
-    <p>{esc(report['summary'])}</p></div>
+  {verdict_html}
 
   <div class="stats">{cells}</div>
   <p class="verified">Scoreboard verified against FACEIT's own numbers</p>
 
   {skill_section}
 
+  <div class="pattern"><p class="lab">The Pattern</p>
+    <p>{esc(report['summary'])}</p></div>
+  {leak_html}
+  {strength_html}
+
   <p class="h">Every death, and how to fix it</p>
   <div class="rounds">{cards}</div>
+
+  {prio_html}
 
   <div class="foot">
     <p class="cta">Every death you took, diagnosed — <b>what went wrong \
