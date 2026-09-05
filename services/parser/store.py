@@ -68,8 +68,9 @@ def init() -> None:
             c.execute("ALTER TABLE reports ADD COLUMN skills TEXT")
         except sqlite3.OperationalError:
             pass
-        # connected FACEIT account (added later)
-        for col in ("faceit_nickname TEXT", "faceit_player_id TEXT"):
+        # connected FACEIT account + Google sign-in (added later)
+        for col in ("faceit_nickname TEXT", "faceit_player_id TEXT",
+                    "google_sub TEXT"):
             try:
                 c.execute(f"ALTER TABLE users ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -128,6 +129,27 @@ def create_user(email: str, pw: str, ign: str) -> int | None:
             return cur.lastrowid
     except sqlite3.IntegrityError:
         return None  # email taken
+
+
+def upsert_google_user(email: str, name: str, sub: str) -> int:
+    """Find or create a user from a verified Google identity. Existing accounts
+    (email/password) are linked by email; new ones get an unusable random
+    password so only Google sign-in works for them."""
+    email = email.lower().strip()
+    with _conn() as c:
+        row = c.execute("SELECT id, google_sub FROM users WHERE email=?",
+                        (email,)).fetchone()
+        if row:
+            if not row["google_sub"] and sub:
+                c.execute("UPDATE users SET google_sub=? WHERE id=?",
+                          (sub, row["id"]))
+            return row["id"]
+        ign = (name or email.split("@")[0]).strip()[:64]
+        cur = c.execute(
+            "INSERT INTO users(email,pw,ign,created_at,google_sub) "
+            "VALUES(?,?,?,?,?)",
+            (email, hash_pw(secrets.token_hex(24)), ign, time.time(), sub))
+        return cur.lastrowid
 
 
 def user_by_email(email: str) -> dict | None:

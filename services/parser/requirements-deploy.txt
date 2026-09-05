@@ -10,3 +10,5 @@ pandas
 zstandard
 google-genai
 anthropic>=0.118.0
+authlib
+httpx

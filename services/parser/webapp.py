@@ -33,7 +33,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "deep-1"
+VERSION = "gauth-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -46,7 +46,44 @@ UPLOAD = Path(__file__).parents[2] / "uploads"
 UPLOAD.mkdir(exist_ok=True)
 
 OUR_HOST = "cs2demoanalysis.com"  # internal navigations don't count as referrers
-_TRACK_SKIP = ("/api", "/favicon", "/version", "/stats", "/static", "/logout")
+_TRACK_SKIP = ("/api", "/favicon", "/version", "/stats", "/static", "/logout",
+               "/auth")
+
+# --- Google sign-in (dormant until GOOGLE_CLIENT_ID/SECRET are set) ---
+try:
+    from authlib.integrations.starlette_client import OAuth as _OAuth
+except Exception:  # authlib not installed (e.g. minimal local env)
+    _OAuth = None
+
+_G_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+_G_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_ENABLED = bool(_OAuth and _G_ID and _G_SECRET)
+oauth = None
+if GOOGLE_ENABLED:
+    oauth = _OAuth()
+    oauth.register(
+        name="google",
+        client_id=_G_ID, client_secret=_G_SECRET,
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
+
+
+def _google_button() -> str:
+    if not GOOGLE_ENABLED:
+        return ""
+    g = ('<svg width=18 height=18 viewBox="0 0 48 48" style="flex:0 0 auto">'
+         '<path fill="#4285F4" d="M45 24c0-1.6-.1-3.1-.4-4.6H24v9h11.8c-.5 2.7-2 5-4.3 6.6v5.5h7C42.7 36.4 45 30.7 45 24z"/>'
+         '<path fill="#34A853" d="M24 46c5.8 0 10.7-1.9 14.3-5.2l-7-5.5c-1.9 1.3-4.4 2.1-7.3 2.1-5.6 0-10.4-3.8-12.1-8.9H4.6v5.6C8.2 41.1 15.5 46 24 46z"/>'
+         '<path fill="#FBBC05" d="M11.9 28.5c-.4-1.3-.7-2.6-.7-4.5s.3-3.2.7-4.5v-5.6H4.6C3.6 16.8 3 20.3 3 24s.6 7.2 1.6 10.1l7.3-5.6z"/>'
+         '<path fill="#EA4335" d="M24 11.4c3.2 0 6 1.1 8.2 3.2l6.1-6.1C34.7 5.1 29.8 3 24 3 15.5 3 8.2 7.9 4.6 14.9l7.3 5.6c1.7-5.1 6.5-9.1 12.1-9.1z"/>'
+         '</svg>')
+    return (
+        '<a class="btn ghost full" href="/auth/google" '
+        'style="display:flex;align-items:center;justify-content:center;gap:10px;'
+        'margin-top:8px">' + g + 'Continue with Google</a>'
+        '<div class=small style="text-align:center;margin:16px 0 4px;'
+        'color:var(--faint)">or with email</div>')
 
 
 def _ref_label(request: Request) -> str:
@@ -369,7 +406,8 @@ def signup_form(request: Request, err: str = ""):
     return shell(request,
         "<div class='wrap narrow'><p class=eyebrow>Create account</p>"
         "<h1>Start your <span class=hl>demo log</span></h1>"
-        "<div class=card><form method=post action=/signup>" + e +
+        "<div class=card>" + _google_button() +
+        "<form method=post action=/signup>" + e +
         "<label>Email</label><input name=email type=email required>"
         "<label>Password</label><input name=password type=password required minlength=6>"
         "<label>Your CS2 in-game name</label>"
@@ -397,7 +435,8 @@ def login_form(request: Request, err: str = ""):
     e = f"<p class=err>{esc(err)}</p>" if err else ""
     return shell(request,
         "<div class='wrap narrow'><p class=eyebrow>Welcome back</p>"
-        "<h1>Log in</h1><div class=card><form method=post action=/login>" + e +
+        "<h1>Log in</h1><div class=card>" + _google_button() +
+        "<form method=post action=/login>" + e +
         "<label>Email</label><input name=email type=email required>"
         "<label>Password</label><input name=password type=password required>"
         "<button class=full type=submit>Log in</button></form></div>"
@@ -416,6 +455,33 @@ def login(request: Request, email: str = Form(...), password: str = Form(...)):
 @app.get("/logout")
 def logout(request: Request):
     request.session.clear()
+    return RedirectResponse("/", 303)
+
+
+@app.get("/auth/google")
+async def google_login(request: Request):
+    if not GOOGLE_ENABLED:
+        return RedirectResponse("/login", 303)
+    redirect_uri = f"https://{OUR_HOST}/auth/google/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/google/callback")
+async def google_callback(request: Request):
+    if not GOOGLE_ENABLED:
+        return RedirectResponse("/login", 303)
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except Exception:  # noqa: BLE001 — user denied, state expired, etc.
+        return RedirectResponse("/login?err=Google+sign-in+was+cancelled", 303)
+    info = token.get("userinfo") or {}
+    email = (info.get("email") or "").lower().strip()
+    if not email or info.get("email_verified") is False:
+        return RedirectResponse(
+            "/login?err=Your+Google+account+has+no+verified+email", 303)
+    name = info.get("name") or info.get("given_name") or ""
+    uid = store.upsert_google_user(email, name, info.get("sub") or "")
+    request.session["uid"] = uid
     return RedirectResponse("/", 303)
 
 
@@ -772,6 +838,7 @@ def version():
         "has_gemini_key": has_gemini,
         "anthropic_installed": anthropic_installed,
         "faceit_enabled": faceit.enabled(),
+        "google_enabled": GOOGLE_ENABLED,
         "storage": store.stats(),
     }
 
