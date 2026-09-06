@@ -34,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "guest-1"
+VERSION = "guest-2"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -456,7 +456,9 @@ def signup_form(request: Request, err: str = ""):
         "<input name=ign placeholder='the name you play under' required>"
         "<p class=small>So we auto-find you in every demo you upload.</p>"
         "<button class=full type=submit>Create account</button></form></div>"
-        "<p class=foot>Already have one? <a href=/login>Log in</a></p></div>")
+        + ("" if u else '<a class="btn ghost full" href="/?ref=guest" '
+           'style="margin-top:14px">Try it as a guest — no account</a>')
+        + "<p class=foot>Already have one? <a href=/login>Log in</a></p></div>")
 
 
 @app.post("/signup")
@@ -490,7 +492,9 @@ def login_form(request: Request, err: str = ""):
         "<label>Email</label><input name=email type=email required>"
         "<label>Password</label><input name=password type=password required>"
         "<button class=full type=submit>Log in</button></form></div>"
-        "<p class=foot>New here? <a href=/signup>Create an account</a></p></div>")
+        + ("" if u else '<a class="btn ghost full" href="/?ref=guest" '
+           'style="margin-top:14px">Try it as a guest — no account</a>')
+        + "<p class=foot>New here? <a href=/signup>Create an account</a></p></div>")
 
 
 @app.post("/login")
