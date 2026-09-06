@@ -34,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "guest-2"
+VERSION = "guest-3"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -640,9 +640,11 @@ def home(request: Request, msg: str = "", err: str = ""):
             "<div class=wrap><p class=eyebrow>AI CS2 Analyst</p>"
             "<h1>Stop reading stats.<br>See <span class=hl>why you died</span>, "
             "round by round.</h1>"
-            "<p class=lede>Drop a CS2 demo and get a coach's read of every death — "
-            "the mistake, the map callout, the fix, and a replay of where it "
-            "happened. <b>No account needed.</b></p>"
+            "<p class=lede><b style='color:var(--ct)'>Don't spend an hour "
+            "rewatching your demo — we do all the work.</b><br>Upload it and get "
+            "a coach's read of every death in a minute: the mistake, the map "
+            "callout, the fix, and a replay of where it happened. "
+            "<b>No account needed.</b></p>"
             "<div class=card style='margin:0 0 16px'>"
             "<form id=f method=post action=/analyze enctype=multipart/form-data>"
             "<div class=drop id=drop><p class=big id=fname>"
@@ -994,8 +996,13 @@ def job_view(request: Request, job_id: str):
         # maybe it finished and was saved — go to the report
         if store.get_report(job_id, u["id"]):
             return RedirectResponse(f"/report/{job_id}", 303)
-        return shell(request, "<div class='wrap narrow'><p class=err>Job not "
-                     "found.</p><p><a href=/>Back to your matches</a></p></div>")
+        return shell(request,
+                     "<div class='wrap narrow'><p class=eyebrow>Analysis expired"
+                     "</p><h1>That analysis is no longer available</h1>"
+                     "<p class=lede>It was still processing when the server "
+                     "updated, so it didn’t finish. Just upload the demo again — "
+                     "it only takes a minute.</p>"
+                     "<a class=btn href=/>Analyze a demo</a></div>")
 
     if job["status"] == "done":
         return RedirectResponse(f"/report/{job_id}", 303)
