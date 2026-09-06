@@ -34,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "steam-1"
+VERSION = "guest-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -302,10 +302,15 @@ def shell(request: Request, body: str, nav: bool = True) -> str:
     u = user(request)
     navbar = ""
     if nav:
-        right = (
-            f"<span class=who>{esc(u['ign'] or u['email'])}</span>"
-            "<a class=btn ghost href=/logout>Log out</a>" if u else
-            "<a href=/login>Log in</a> <a class=btn href=/signup>Sign up</a>")
+        if u and u.get("is_guest"):
+            right = ("<span class=who>Guest</span>"
+                     "<a class=btn href=/signup>Save your reports</a>")
+        elif u:
+            right = (f"<span class=who>{esc(u['ign'] or u['email'])}</span>"
+                     "<a class=btn ghost href=/logout>Log out</a>")
+        else:
+            right = ("<a href=/login>Log in</a> "
+                     "<a class=btn href=/signup>Sign up</a>")
         navbar = (f"<div class=nav><a class=brand href=/>{LOGO_MARK}"
                   f"<span>AI CS2 Analyst</span></a>"
                   f"<span class=sp></span>{right}</div>")
@@ -433,12 +438,16 @@ def faceit_sync(uid: int, max_new: int = 3):
 # --------------------------------------------------------------------- auth ---
 @app.get("/signup", response_class=HTMLResponse)
 def signup_form(request: Request, err: str = ""):
-    if user(request):
+    u = user(request)
+    if u and not u.get("is_guest"):
         return RedirectResponse("/", 303)
     e = f"<p class=err>{esc(err)}</p>" if err else ""
+    guest_note = ("<p class=small style='margin:0 0 12px;color:var(--good)'>"
+                  "Your guest reports will move to this account.</p>"
+                  if u and u.get("is_guest") else "")
     return shell(request,
         "<div class='wrap narrow'><p class=eyebrow>Create account</p>"
-        "<h1>Start your <span class=hl>demo log</span></h1>"
+        "<h1>Start your <span class=hl>demo log</span></h1>" + guest_note +
         "<div class=card>" + _social_buttons() +
         "<form method=post action=/signup>" + e +
         "<label>Email</label><input name=email type=email required>"
@@ -453,6 +462,13 @@ def signup_form(request: Request, err: str = ""):
 @app.post("/signup")
 def signup(request: Request, email: str = Form(...), password: str = Form(...),
            ign: str = Form(...)):
+    cur = user(request)
+    if cur and cur.get("is_guest"):
+        # promote the guest row in place so its reports carry over
+        if store.promote_guest(cur["id"], email, password, ign):
+            return RedirectResponse("/", 303)
+        return RedirectResponse(
+            "/signup?err=That+email+is+already+registered", 303)
     if not store.user_by_email(email):
         uid = store.create_user(email, password, ign)
         if uid:
@@ -463,7 +479,8 @@ def signup(request: Request, email: str = Form(...), password: str = Form(...),
 
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request, err: str = ""):
-    if user(request):
+    u = user(request)
+    if u and not u.get("is_guest"):
         return RedirectResponse("/", 303)
     e = f"<p class=err>{esc(err)}</p>" if err else ""
     return shell(request,
@@ -619,12 +636,23 @@ def home(request: Request, msg: str = "", err: str = ""):
             "<div class=wrap><p class=eyebrow>AI CS2 Analyst</p>"
             "<h1>Stop reading stats.<br>See <span class=hl>why you died</span>, "
             "round by round.</h1>"
-            "<p class=lede>Upload a CS2 demo. Get a coach's read of every death — "
-            "the mistake, the map callout, and how to fix it. Saved to your "
-            "profile so you can track it over time.</p>"
-            "<a class=btn href=/signup>Get started — free</a> &nbsp; "
-            "<a href=/login>Log in</a></div>")
+            "<p class=lede>Drop a CS2 demo and get a coach's read of every death — "
+            "the mistake, the map callout, the fix, and a replay of where it "
+            "happened. <b>No account needed.</b></p>"
+            "<div class=card style='margin:0 0 16px'>"
+            "<form id=f method=post action=/analyze enctype=multipart/form-data>"
+            "<div class=drop id=drop><p class=big id=fname>"
+            "Drop a demo to analyze — free, no signup</p>"
+            "<p class=sm>.dem, .zst, .gz or .bz2 &middot; compressed is fine, "
+            "we extract it</p></div>"
+            "<input type=file id=file name=file accept='.dem,.zst,.gz,.bz2' required>"
+            "<button class=full id=go type=submit>Analyze my match — free</button>"
+            "</form></div>"
+            "<p class=small>Want to keep your reports and track progress over "
+            "time? <a href=/signup>Create a free account</a> &middot; "
+            "<a href=/login>Log in</a></p></div>" + _UPLOAD_JS)
 
+    guest = bool(u.get("is_guest"))
     reports = store.list_reports(u["id"])
     if reports:
         cards = "".join(_report_card(r) for r in reports)
@@ -637,10 +665,22 @@ def home(request: Request, msg: str = "", err: str = ""):
         banner = f"<p class=err style='margin:0 0 18px'>{esc(err)}</p>"
     elif msg:
         banner = f"<p class=small style='margin:0 0 18px'>{esc(msg)}</p>"
+    guest_banner = ""
+    if guest:
+        guest_banner = (
+            "<div class=card style='margin:0 0 20px;border-color:"
+            "rgba(63,185,80,.4);background:rgba(63,185,80,.06)'>"
+            "<p style='margin:0'><b>You're browsing as a guest.</b> "
+            "<a href=/signup>Sign up free</a> to keep these reports, track your "
+            "progress, and connect Steam/FACEIT — your current reports move with "
+            "you.</p></div>")
+    eyebrow = ("Guest session" if guest
+               else f"Welcome, {esc(u['ign'] or u['email'])}")
+    extras = "" if guest else (_faceit_card(u) + _progression(reports))
     return shell(request,
         "<div class=wrap>"
-        f"<p class=eyebrow>Welcome, {esc(u['ign'] or u['email'])}</p>"
-        "<h1>Your matches</h1>" + banner +
+        f"<p class=eyebrow>{eyebrow}</p>"
+        "<h1>Your matches</h1>" + banner + guest_banner +
         "<div class=card style='margin-bottom:26px'>"
         "<form id=f method=post action=/analyze enctype=multipart/form-data>"
         "<div class=drop id=drop><p class=big id=fname>Drop a demo to analyze</p>"
@@ -648,7 +688,7 @@ def home(request: Request, msg: str = "", err: str = ""):
         "</div>"
         "<input type=file id=file name=file accept='.dem,.zst,.gz,.bz2' required>"
         "<button class=full id=go type=submit>Analyze new match</button>"
-        "</form></div>" + _faceit_card(u) + _progression(reports) + history
+        "</form></div>" + extras + history
         + "</div>" + _UPLOAD_JS)
 
 
@@ -738,7 +778,9 @@ f.addEventListener('submit',()=>{go.disabled=true;go.textContent='Uploading…'}
 async def analyze(request: Request, file: UploadFile, name: str = Form("")):
     u = user(request)
     if not u:
-        return RedirectResponse("/login", 303)
+        # no account needed — spin up a guest session, reports save under it
+        request.session["uid"] = store.create_guest_user()
+        u = user(request)
     job_id = uuid.uuid4().hex[:12]
     dest = UPLOAD / f"{job_id}.dem"
     with open(dest, "wb") as out:

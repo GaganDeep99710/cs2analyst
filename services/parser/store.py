@@ -68,9 +68,10 @@ def init() -> None:
             c.execute("ALTER TABLE reports ADD COLUMN skills TEXT")
         except sqlite3.OperationalError:
             pass
-        # connected FACEIT account + Google / Steam sign-in (added later)
+        # connected FACEIT account + Google / Steam sign-in + guest flag
         for col in ("faceit_nickname TEXT", "faceit_player_id TEXT",
-                    "google_sub TEXT", "steam_id TEXT"):
+                    "google_sub TEXT", "steam_id TEXT",
+                    "is_guest INTEGER DEFAULT 0"):
             try:
                 c.execute(f"ALTER TABLE users ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -168,6 +169,34 @@ def upsert_steam_user(steam_id: str, name: str) -> int:
             "VALUES(?,?,?,?,?)",
             (email, hash_pw(secrets.token_hex(24)), ign, time.time(), steam_id))
         return cur.lastrowid
+
+
+def create_guest_user() -> int:
+    """A throwaway account so a visitor can analyze a demo without signing up.
+    Reports save under it; signing up later promotes this same row (keeping
+    the reports) via promote_guest()."""
+    with _conn() as c:
+        tok = secrets.token_hex(8)
+        cur = c.execute(
+            "INSERT INTO users(email,pw,ign,created_at,is_guest) "
+            "VALUES(?,?,?,?,1)",
+            (f"guest_{tok}@guest.local", hash_pw(secrets.token_hex(24)),
+             "", time.time()))
+        return cur.lastrowid
+
+
+def promote_guest(uid: int, email: str, password: str, ign: str) -> bool:
+    """Turn a guest row into a real account, keeping its reports. False if the
+    email already belongs to a different account."""
+    email = email.lower().strip()
+    with _conn() as c:
+        taken = c.execute("SELECT 1 FROM users WHERE email=? AND id!=?",
+                          (email, uid)).fetchone()
+        if taken:
+            return False
+        c.execute("UPDATE users SET email=?, pw=?, ign=?, is_guest=0 WHERE id=?",
+                  (email, hash_pw(password), ign.strip(), uid))
+        return True
 
 
 def user_by_email(email: str) -> dict | None:
@@ -282,8 +311,11 @@ def traffic_stats() -> dict:
             "GROUP BY path ORDER BY v DESC LIMIT 12").fetchall()]
         signups = {r["d"]: r["n"] for r in c.execute(
             "SELECT strftime('%Y-%m-%d', created_at, 'unixepoch') d, "
-            "COUNT(*) n FROM users GROUP BY d").fetchall()}
-        users_total = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            "COUNT(*) n FROM users WHERE COALESCE(is_guest,0)=0 "
+            "GROUP BY d").fetchall()}
+        users_total = c.execute(
+            "SELECT COUNT(*) FROM users WHERE COALESCE(is_guest,0)=0"
+        ).fetchone()[0]
         reports_total = c.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
     return {
         "total_views": tot["v"], "total_visitors": tot["u"],

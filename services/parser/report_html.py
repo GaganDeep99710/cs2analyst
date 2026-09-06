@@ -14,6 +14,7 @@ Usage:
 """
 
 import html
+import json
 import math
 import sys
 from pathlib import Path
@@ -21,6 +22,15 @@ from pathlib import Path
 import coach
 import context_pack
 import skills as skillmod
+
+_RADAR_DIR = Path(__file__).parents[2] / "radars"
+
+
+def _calib(map_name: str) -> dict | None:
+    try:
+        return json.loads((_RADAR_DIR / "calib.json").read_text()).get(map_name)
+    except Exception:  # noqa: BLE001
+        return None
 
 PISTOLS = {"glock", "hkp2000", "usp_silencer", "p2000", "p250", "tec9",
            "fiveseven", "cz75a", "deagle", "elite", "revolver"}
@@ -156,6 +166,91 @@ CSS = """
 """
 
 
+REPLAY_CSS = """
+.replay{margin:12px 0 0;border-top:1px dashed var(--line);padding-top:10px}
+.replay>summary{list-style:none;cursor:pointer;font-family:var(--mono);
+  font-size:12px;letter-spacing:.06em;color:var(--ct);display:inline-flex;
+  align-items:center;gap:7px;user-select:none}
+.replay>summary::-webkit-details-marker{display:none}
+.replay>summary:hover{color:#7dbcf5}
+.rp{margin-top:12px}
+.rp canvas{width:100%;max-width:420px;aspect-ratio:1;display:block;margin:0 auto;
+  border:1px solid var(--line);border-radius:10px;background:#0b0e13}
+.rpc{display:flex;align-items:center;gap:12px;max-width:420px;margin:10px auto 0}
+.rpplay{flex:0 0 auto;width:38px;height:38px;border-radius:9px;padding:0;font-size:14px}
+.rpseek{flex:1;accent-color:var(--ct);height:4px}
+.rplegend{font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  display:flex;gap:12px;justify-content:center;max-width:420px;margin:8px auto 0}
+.rplegend b{display:inline-block;width:9px;height:9px;border-radius:50%;
+  margin-right:5px;vertical-align:-1px}
+"""
+
+REPLAY_JS = """<script>
+(function(){
+ var CAL=window.__CALIB, RAD=document.getElementById('_radar');
+ if(!CAL||!RAD) return;
+ function w2c(x,y,b,S){return [ (x-b[0])/b[2]*S, (b[1]-y)/b[2]*S ];}
+ function init(det){
+  if(det.__init) return; det.__init=true;
+  var D=JSON.parse(det.querySelector('.rpdata').textContent);
+  var cv=det.querySelector('canvas'), ctx=cv.getContext('2d'), S=cv.width;
+  var seek=det.querySelector('.rpseek'), play=det.querySelector('.rpplay');
+  var F=D.f, i=0, playing=false, last=0, trail=[];
+  seek.max=F.length-1;
+  var sx=(D.bbox[0]-CAL.pos_x)/CAL.scale, sy=(CAL.pos_y-D.bbox[1])/CAL.scale, ss=D.bbox[2]/CAL.scale;
+  function draw(){
+   ctx.clearRect(0,0,S,S);
+   if(RAD.complete&&RAD.naturalWidth) ctx.drawImage(RAD,sx,sy,ss,ss,0,0,S,S);
+   ctx.fillStyle='rgba(11,14,19,.32)';ctx.fillRect(0,0,S,S);
+   var fr=F[i], t=D.target_i, k=D.killer_i;
+   if(t!=null&&fr[t][2]){var q=w2c(fr[t][0],fr[t][1],D.bbox,S);trail.push(q);if(trail.length>16)trail.shift();}
+   ctx.strokeStyle='rgba(255,255,255,.35)';ctx.lineWidth=2;ctx.beginPath();
+   trail.forEach(function(p,n){n?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);});ctx.stroke();
+   fr.forEach(function(p,n){
+    var c=w2c(p[0],p[1],D.bbox,S),x=c[0],y=c[1],col=D.roster[n].tm===3?'#5aa9f0':'#e0a53d';
+    if(!p[2]){ctx.strokeStyle='rgba(130,140,150,.5)';ctx.lineWidth=2;ctx.beginPath();
+      ctx.moveTo(x-4,y-4);ctx.lineTo(x+4,y+4);ctx.moveTo(x+4,y-4);ctx.lineTo(x-4,y+4);ctx.stroke();return;}
+    ctx.beginPath();ctx.arc(x,y,6,0,7);ctx.fillStyle=col;ctx.fill();
+    if(n===t){ctx.lineWidth=3;ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(x,y,10,0,7);ctx.stroke();}
+    if(n===k){ctx.lineWidth=3;ctx.strokeStyle='#e5484d';ctx.beginPath();ctx.arc(x,y,10,0,7);ctx.stroke();}
+   });
+   if(i>=F.length-1&&t!=null){var p=F[F.length-1][t],c=w2c(p[0],p[1],D.bbox,S);
+    ctx.strokeStyle='#e5484d';ctx.lineWidth=3;ctx.beginPath();ctx.arc(c[0],c[1],14,0,7);ctx.stroke();
+    ctx.fillStyle='#e5484d';ctx.font='bold 12px monospace';ctx.fillText('\\u2716 killed here',c[0]+15,c[1]-9);}
+   seek.value=i;
+  }
+  function loop(ts){ if(!playing)return; if(ts-last>90){i++;last=ts;
+    if(i>=F.length){i=F.length-1;playing=false;play.textContent='\\u21bb';draw();return;} draw();}
+   requestAnimationFrame(loop);}
+  play.onclick=function(){ if(i>=F.length-1){i=0;trail.length=0;}
+   playing=!playing; play.textContent=playing?'\\u275a\\u275a':'\\u25b6';
+   if(playing){last=0;requestAnimationFrame(loop);}};
+  seek.oninput=function(){playing=false;play.textContent='\\u25b6';i=+seek.value;trail.length=0;draw();};
+  det.addEventListener('toggle',function(){if(det.open){i=0;trail.length=0;draw();}});
+  draw();
+ }
+ function initOpen(){document.querySelectorAll('details.replay[open]').forEach(init);}
+ document.querySelectorAll('details.replay').forEach(function(d){
+   d.addEventListener('toggle',function(){if(d.open)init(d);});});
+ if(RAD.complete) initOpen(); else RAD.addEventListener('load',initOpen);
+})();
+</script>"""
+
+
+def _replay_block(rnd: int, data: dict) -> str:
+    return (
+        '<details class="replay"><summary>&#9654; Watch the mistake</summary>'
+        '<div class="rp"><canvas width="560" height="560"></canvas>'
+        '<div class="rpc"><button class="rpplay">&#9654;</button>'
+        '<input class="rpseek" type="range" min="0" value="0"></div>'
+        '<div class="rplegend"><span><b style="background:#5aa9f0"></b>CT</span>'
+        '<span><b style="background:#e0a53d"></b>T</span>'
+        '<span><b style="background:#fff"></b>You</span>'
+        '<span><b style="background:#e5484d"></b>Killer</span></div></div>'
+        f'<script class="rpdata" type="application/json">{json.dumps(data)}</script>'
+        '</details>')
+
+
 def _chips(sig: dict) -> str:
     out = []
     kb = sig.get("killed_by")
@@ -247,9 +342,15 @@ def radar_svg(scores: dict) -> str:
             f'{rings}{axes}{goal}{you}{dots}{labels}</svg>')
 
 
-def render(pack: dict, report: dict, meta: dict) -> str:
+def render(pack: dict, report: dict, meta: dict,
+           replays: dict | None = None, radar_src: str | None = None) -> str:
     ident, sb = pack["identity"], pack["your_scoreboard"]
     sigs = {d["round"]: d for d in pack["deaths"]}
+    replays = replays or {}
+    map_name = ident["map"]
+    calib = _calib(map_name) if replays else None
+    if not calib:
+        replays = {}  # no calibration for this map -> no replays
 
     stats = [
         ("K / D / A", f"{sb['kills']}/{sb['deaths']}/{sb['assists']}"),
@@ -291,7 +392,10 @@ def render(pack: dict, report: dict, meta: dict) -> str:
             f'<div class="line"><span class="tag m">Mistake</span>'
             f'<p>{esc(note["mistake"])}</p></div>'
             f'<div class="line fix"><span class="tag f">Fix</span>'
-            f'<p>{esc(note["how_to_improve"])}</p></div></div>'
+            f'<p>{esc(note["how_to_improve"])}</p></div>'
+            + (_replay_block(note["round"], replays[note["round"]])
+               if note["round"] in replays else "")
+            + '</div>'
         )
 
     verdict_html = (f'<p class="verdict">{esc(report["verdict"])}</p>'
@@ -311,9 +415,18 @@ def render(pack: dict, report: dict, meta: dict) -> str:
         prio_html = (f'<p class="h">Fix these first</p>'
                      f'<ol class="prio">{items}</ol>')
 
+    replay_foot = ""
+    if replays:
+        src = radar_src or f"/radar/{map_name}.png"
+        replay_foot = (
+            f'<img id="_radar" src="{src}" alt="" style="display:none"'
+            f' crossorigin="anonymous">'
+            f'<script>window.__CALIB={json.dumps(calib)}</script>'
+            + REPLAY_JS)
+
     return f"""<title>AI CS2 Analyst — {esc(ident['player'])} death review, \
 {esc(ident['map'])}</title>
-<style>{CSS}</style>
+<style>{CSS}{REPLAY_CSS}</style>
 <div class="report"><div class="wrap">
   <p class="eyebrow">AI CS2 Analyst // Death Review</p>
   <p class="ticker"><b>{esc(ident['player'])}</b><span class="sep">/</span>\
@@ -343,7 +456,7 @@ and how to fix it.</b></p>
     <p class="sub">Automated from one .dem file. No stats to decode.</p>
     <p class="credit">AI CS2 Analyst · generated by {esc(meta['label'])}</p>
   </div>
-</div></div>"""
+</div></div>{replay_foot}"""
 
 
 def main(demo_path: str, target: str) -> None:
