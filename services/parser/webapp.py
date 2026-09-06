@@ -13,6 +13,7 @@ import datetime
 import hashlib
 import html as _html
 import os
+import re
 import time
 import traceback
 import urllib.parse
@@ -33,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "gauth-1"
+VERSION = "steam-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -69,6 +70,32 @@ if GOOGLE_ENABLED:
     )
 
 
+# Steam OpenID needs no credentials — "Sign in through Steam" works out of the
+# box. An optional STEAM_API_KEY only enriches the profile (display name).
+STEAM_ENABLED = os.getenv("STEAM_LOGIN", "1") != "0"
+
+
+def _steam_button() -> str:
+    if not STEAM_ENABLED:
+        return ""
+    s = ('<svg width=19 height=19 viewBox="0 0 32 32" style="flex:0 0 auto" '
+         'fill="currentColor"><path d="M16 2C8.4 2 2.2 7.8 2 15.1l7.5 3.1c.6-.4 '
+         '1.4-.7 2.2-.7h.3l3.3-4.8v-.1c0-2.9 2.4-5.3 5.3-5.3s5.3 2.4 5.3 5.3-2.4 '
+         '5.3-5.3 5.3h-.1l-4.7 3.4v.3c0 2.2-1.8 4-4 4-1.9 0-3.6-1.4-3.9-3.2l-5.3-'
+         '2.2C6.5 26 10.8 30 16 30c7.7 0 14-6.3 14-14S23.7 2 16 2z"/>'
+         '<path d="M10.5 23.4l-1.7-.7c.3.6.8 1.2 1.5 1.4 1.5.6 3.2-.1 3.8-1.6.3-.7.3-'
+         '1.5 0-2.2s-.9-1.3-1.6-1.6c-.7-.3-1.4-.3-2.1 0l1.8.7c1.1.5 1.6 1.7 1.2 '
+         '2.8s-1.7 1.6-2.9 1.2z"/><path d="M23.3 12.6c0-1.9-1.6-3.5-3.5-3.5s-3.5 '
+         '1.6-3.5 3.5 1.6 3.5 3.5 3.5 3.5-1.6 3.5-3.5zm-6.1 0c0-1.5 1.2-2.6 2.6-'
+         '2.6 1.5 0 2.6 1.2 2.6 2.6s-1.2 2.7-2.6 2.7c-1.5 0-2.6-1.2-2.6-2.7z"/>'
+         '</svg>')
+    return (
+        '<a class="btn full" href="/auth/steam" '
+        'style="display:flex;align-items:center;justify-content:center;gap:10px;'
+        'background:#171a21;color:#fff;margin-top:8px">' + s +
+        'Sign in through Steam</a>')
+
+
 def _google_button() -> str:
     if not GOOGLE_ENABLED:
         return ""
@@ -81,9 +108,15 @@ def _google_button() -> str:
     return (
         '<a class="btn ghost full" href="/auth/google" '
         'style="display:flex;align-items:center;justify-content:center;gap:10px;'
-        'margin-top:8px">' + g + 'Continue with Google</a>'
-        '<div class=small style="text-align:center;margin:16px 0 4px;'
-        'color:var(--faint)">or with email</div>')
+        'margin-top:8px">' + g + 'Continue with Google</a>')
+
+
+def _social_buttons() -> str:
+    btns = _steam_button() + _google_button()
+    if not btns:
+        return ""
+    return btns + ('<div class=small style="text-align:center;margin:16px 0 4px;'
+                   'color:var(--faint)">or with email</div>')
 
 
 def _ref_label(request: Request) -> str:
@@ -406,7 +439,7 @@ def signup_form(request: Request, err: str = ""):
     return shell(request,
         "<div class='wrap narrow'><p class=eyebrow>Create account</p>"
         "<h1>Start your <span class=hl>demo log</span></h1>"
-        "<div class=card>" + _google_button() +
+        "<div class=card>" + _social_buttons() +
         "<form method=post action=/signup>" + e +
         "<label>Email</label><input name=email type=email required>"
         "<label>Password</label><input name=password type=password required minlength=6>"
@@ -435,7 +468,7 @@ def login_form(request: Request, err: str = ""):
     e = f"<p class=err>{esc(err)}</p>" if err else ""
     return shell(request,
         "<div class='wrap narrow'><p class=eyebrow>Welcome back</p>"
-        "<h1>Log in</h1><div class=card>" + _google_button() +
+        "<h1>Log in</h1><div class=card>" + _social_buttons() +
         "<form method=post action=/login>" + e +
         "<label>Email</label><input name=email type=email required>"
         "<label>Password</label><input name=password type=password required>"
@@ -481,6 +514,61 @@ async def google_callback(request: Request):
             "/login?err=Your+Google+account+has+no+verified+email", 303)
     name = info.get("name") or info.get("given_name") or ""
     uid = store.upsert_google_user(email, name, info.get("sub") or "")
+    request.session["uid"] = uid
+    return RedirectResponse("/", 303)
+
+
+# --- Steam OpenID 2.0 (keyless; STEAM_API_KEY only enriches the name) ---
+_STEAM_LOGIN = "https://steamcommunity.com/openid/login"
+_STEAM_ID_RE = re.compile(r"https://steamcommunity\.com/openid/id/(\d+)")
+
+
+@app.get("/auth/steam")
+def steam_login(request: Request):
+    if not STEAM_ENABLED:
+        return RedirectResponse("/login", 303)
+    params = {
+        "openid.ns": "http://specs.openid.net/auth/2.0",
+        "openid.mode": "checkid_setup",
+        "openid.return_to": f"https://{OUR_HOST}/auth/steam/callback",
+        "openid.realm": f"https://{OUR_HOST}",
+        "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
+        "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select",
+    }
+    return RedirectResponse(_STEAM_LOGIN + "?" + urllib.parse.urlencode(params),
+                            303)
+
+
+@app.get("/auth/steam/callback")
+async def steam_callback(request: Request):
+    if not STEAM_ENABLED:
+        return RedirectResponse("/login", 303)
+    import httpx
+    # verify the assertion by echoing it back to Steam with check_authentication
+    data = dict(request.query_params)
+    data["openid.mode"] = "check_authentication"
+    claimed = request.query_params.get("openid.claimed_id", "")
+    m = _STEAM_ID_RE.match(claimed)
+    if not m:
+        return RedirectResponse("/login?err=Steam+sign-in+failed", 303)
+    steam_id = m.group(1)
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(_STEAM_LOGIN, data=data)
+            if "is_valid:true" not in r.text:
+                return RedirectResponse("/login?err=Steam+could+not+verify", 303)
+            name = ""
+            key = os.getenv("STEAM_API_KEY", "")
+            if key:
+                pr = await c.get(
+                    "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/",
+                    params={"key": key, "steamids": steam_id})
+                players = pr.json().get("response", {}).get("players", [])
+                if players:
+                    name = players[0].get("personaname", "")
+    except Exception:  # noqa: BLE001
+        return RedirectResponse("/login?err=Steam+sign-in+failed", 303)
+    uid = store.upsert_steam_user(steam_id, name)
     request.session["uid"] = uid
     return RedirectResponse("/", 303)
 
@@ -839,6 +927,7 @@ def version():
         "anthropic_installed": anthropic_installed,
         "faceit_enabled": faceit.enabled(),
         "google_enabled": GOOGLE_ENABLED,
+        "steam_enabled": STEAM_ENABLED,
         "storage": store.stats(),
     }
 

@@ -68,9 +68,9 @@ def init() -> None:
             c.execute("ALTER TABLE reports ADD COLUMN skills TEXT")
         except sqlite3.OperationalError:
             pass
-        # connected FACEIT account + Google sign-in (added later)
+        # connected FACEIT account + Google / Steam sign-in (added later)
         for col in ("faceit_nickname TEXT", "faceit_player_id TEXT",
-                    "google_sub TEXT"):
+                    "google_sub TEXT", "steam_id TEXT"):
             try:
                 c.execute(f"ALTER TABLE users ADD COLUMN {col}")
             except sqlite3.OperationalError:
@@ -149,6 +149,24 @@ def upsert_google_user(email: str, name: str, sub: str) -> int:
             "INSERT INTO users(email,pw,ign,created_at,google_sub) "
             "VALUES(?,?,?,?,?)",
             (email, hash_pw(secrets.token_hex(24)), ign, time.time(), sub))
+        return cur.lastrowid
+
+
+def upsert_steam_user(steam_id: str, name: str) -> int:
+    """Find or create a user from a verified SteamID (SteamID64). Steam gives
+    no email, so we store a synthetic one; the SteamID is the real identity."""
+    steam_id = str(steam_id).strip()
+    email = f"steam_{steam_id}@steam.local"
+    with _conn() as c:
+        row = c.execute("SELECT id FROM users WHERE steam_id=?",
+                        (steam_id,)).fetchone()
+        if row:
+            return row["id"]
+        ign = (name or f"steam_{steam_id}").strip()[:64]
+        cur = c.execute(
+            "INSERT INTO users(email,pw,ign,created_at,steam_id) "
+            "VALUES(?,?,?,?,?)",
+            (email, hash_pw(secrets.token_hex(24)), ign, time.time(), steam_id))
         return cur.lastrowid
 
 
