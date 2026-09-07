@@ -159,9 +159,13 @@ def upsert_steam_user(steam_id: str, name: str) -> int:
     steam_id = str(steam_id).strip()
     email = f"steam_{steam_id}@steam.local"
     with _conn() as c:
-        row = c.execute("SELECT id FROM users WHERE steam_id=?",
+        row = c.execute("SELECT id, ign FROM users WHERE steam_id=?",
                         (steam_id,)).fetchone()
         if row:
+            # backfill the display name if we only had the placeholder before
+            if name and (not row["ign"] or row["ign"].startswith("steam_")):
+                c.execute("UPDATE users SET ign=? WHERE id=?",
+                          (name.strip()[:64], row["id"]))
             return row["id"]
         ign = (name or f"steam_{steam_id}").strip()[:64]
         cur = c.execute(

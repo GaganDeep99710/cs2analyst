@@ -296,6 +296,94 @@ def _chips(sig: dict) -> str:
     )
 
 
+KILLFEED_CSS = """
+.kf{display:flex;align-items:center;justify-content:flex-end;gap:11px;
+  background:rgba(0,0,0,.34);border:1px solid var(--line);border-radius:7px;
+  padding:8px 13px;margin:0 0 13px;font-family:var(--mono);font-size:13px;
+  font-weight:700;letter-spacing:.03em;text-transform:uppercase;flex-wrap:wrap}
+.kf-killer{white-space:nowrap}
+.kf-weap{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
+.kf-weap svg{width:54px;height:17px;fill:currentColor;display:block}
+.kf-hs{width:9px;height:9px;border-radius:50%;background:var(--crit);
+  box-shadow:0 0 7px var(--crit);display:inline-block;flex:0 0 auto}
+.kf-you{border:1.5px solid;border-radius:4px;padding:2px 9px;font-weight:800}
+"""
+
+# weapon-silhouette icons for the kill feed (simple monochrome shapes, point
+# right toward the victim like CS2's own feed). currentColor fills; the small
+# bg-colored bits punch holes.
+_WICONS = {
+    "rifle": '<rect x="6" y="8" width="40" height="5" rx="1"/><rect x="2" y="8" width="6" height="6" rx="1"/><rect x="20" y="12" width="6" height="7" rx="1"/><rect x="46" y="9" width="16" height="2.5" rx="1"/>',
+    "sniper": '<rect x="4" y="9" width="34" height="4" rx="1"/><rect x="1" y="9" width="5" height="6" rx="1"/><rect x="22" y="4" width="16" height="3" rx="1"/><rect x="38" y="9.5" width="24" height="2" rx="1"/><rect x="16" y="13" width="4" height="6"/>',
+    "pistol": '<rect x="16" y="8" width="24" height="4.5" rx="1"/><rect x="19" y="12" width="7" height="8" rx="1"/><rect x="40" y="9" width="8" height="2.5" rx="1"/>',
+    "smg": '<rect x="10" y="8" width="28" height="5" rx="1"/><rect x="5" y="9" width="6" height="5" rx="1"/><rect x="18" y="13" width="5" height="7" rx="1"/><rect x="38" y="9.5" width="12" height="2.5" rx="1"/>',
+    "shotgun": '<rect x="6" y="8" width="34" height="5" rx="1"/><rect x="2" y="8" width="6" height="6" rx="1"/><rect x="40" y="9" width="22" height="2.5" rx="1"/><rect x="30" y="13" width="12" height="3" rx="1"/>',
+    "knife": '<rect x="4" y="10" width="10" height="5" rx="1"/><path d="M14 10.5 L58 6 L58 9 L16 14 Z"/>',
+    "nade": '<ellipse cx="34" cy="12" rx="9" ry="7"/><rect x="30" y="3" width="8" height="4" rx="1"/><rect x="33" y="1" width="2" height="3"/>',
+    "bomb": '<rect x="16" y="6" width="32" height="12" rx="1.5"/><rect x="30" y="1" width="2" height="6"/><circle cx="31" cy="1.5" r="1.6"/>',
+    "skull": '<circle cx="30" cy="9" r="8"/><rect x="26" y="14" width="8" height="5" rx="1"/><circle cx="27" cy="8" r="2" fill="#0b0e13"/><circle cx="33" cy="8" r="2" fill="#0b0e13"/>',
+}
+
+_SNIPERS = {"awp", "ssg08", "scar20", "g3sg1"}
+_PISTOLS_KF = {"glock", "hkp2000", "usp_silencer", "p2000", "p250", "tec9",
+               "fiveseven", "cz75a", "deagle", "elite", "revolver"}
+_SMGS = {"mac10", "mp9", "mp7", "mp5sd", "ump45", "p90", "bizon"}
+_SHOTGUNS = {"nova", "xm1014", "mag7", "sawedoff"}
+_NADES = {"hegrenade", "molotov", "incgrenade", "inferno", "flashbang",
+          "smokegrenade", "decoy"}
+
+
+def _wcat(weapon: str) -> str:
+    w = (weapon or "").lower()
+    if not w:
+        return "skull"
+    if w.startswith("planted") or w == "c4":
+        return "bomb"
+    if any(k in w for k in ("knife", "bayonet", "karambit", "daggers")):
+        return "knife"
+    if w in _SNIPERS:
+        return "sniper"
+    if w in _PISTOLS_KF:
+        return "pistol"
+    if w in _SMGS:
+        return "smg"
+    if w in _SHOTGUNS:
+        return "shotgun"
+    if w in _NADES:
+        return "nade"
+    return "rifle"
+
+
+def _wsvg(cat: str) -> str:
+    return (f'<svg viewBox="0 0 64 20" xmlns="http://www.w3.org/2000/svg" '
+            f'aria-hidden="true">{_WICONS.get(cat, _WICONS["rifle"])}</svg>')
+
+
+def _killfeed(sig: dict) -> str:
+    side = sig.get("side")
+    you_col = ("var(--ct)" if side == "CT"
+               else "var(--t)" if side == "T" else "var(--muted)")
+    enemy_col = ("var(--t)" if side == "CT"
+                 else "var(--ct)" if side == "T" else "var(--muted)")
+    kb = sig.get("killed_by")
+    if sig.get("died_to_non_combat"):
+        if kb == "the bomb exploding":
+            icon, killer, enemy_col = _wsvg("bomb"), "C4", "var(--t)"
+        else:
+            icon, killer, enemy_col = _wsvg("skull"), "WORLD", "var(--muted)"
+        hs = ""
+    else:
+        icon = _wsvg(_wcat(sig.get("weapon")))
+        killer = esc(kb) if isinstance(kb, str) else "ENEMY"
+        hs = ('<span class="kf-hs" title="headshot"></span>'
+              if sig.get("headshot") else "")
+    return (
+        f'<div class="kf"><span class="kf-killer" style="color:{enemy_col}">'
+        f'{killer}</span><span class="kf-weap">{icon}{hs}</span>'
+        f'<span class="kf-you" style="color:{you_col};border-color:{you_col}">'
+        f'YOU</span></div>')
+
+
 def radar_svg(scores: dict) -> str:
     """Self-contained radar of the six category scores vs the goal ring."""
     cats = [c for c in skillmod.CATEGORIES if c in scores]
@@ -383,7 +471,7 @@ def render(pack: dict, report: dict, meta: dict,
         bits = ([f'<span class="loc">{esc(loc)}</span>'] if loc else []) + \
                [esc(tail)]
         cards += (
-            f'<div class="rc"><div class="rc-top">'
+            f'<div class="rc">{_killfeed(sig)}<div class="rc-top">'
             f'<span class="rlabel">ROUND <span class="rd">'
             f'{note["round"]:02d}</span></span>'
             f'<span class="rmeta">{" · ".join(bits)}</span>'
@@ -426,7 +514,7 @@ def render(pack: dict, report: dict, meta: dict,
 
     return f"""<title>AI CS2 Analyst — {esc(ident['player'])} death review, \
 {esc(ident['map'])}</title>
-<style>{CSS}{REPLAY_CSS}</style>
+<style>{CSS}{REPLAY_CSS}{KILLFEED_CSS}</style>
 <div class="report"><div class="wrap">
   <p class="eyebrow">AI CS2 Analyst // Death Review</p>
   <p class="ticker"><b>{esc(ident['player'])}</b><span class="sep">/</span>\

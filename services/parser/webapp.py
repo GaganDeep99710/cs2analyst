@@ -34,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "cs2skin-1"
+VERSION = "killfeed-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -658,6 +658,17 @@ async def steam_callback(request: Request):
                 players = pr.json().get("response", {}).get("players", [])
                 if players:
                     name = players[0].get("personaname", "")
+            if not name:
+                # public profile XML — persona name without any API key
+                try:
+                    xr = await c.get(
+                        f"https://steamcommunity.com/profiles/{steam_id}?xml=1")
+                    mm = re.search(
+                        r"<steamID><!\[CDATA\[(.*?)\]\]></steamID>", xr.text)
+                    if mm:
+                        name = mm.group(1).strip()
+                except Exception:  # noqa: BLE001
+                    pass
     except Exception:  # noqa: BLE001
         return RedirectResponse("/login?err=Steam+sign-in+failed", 303)
     uid = store.upsert_steam_user(steam_id, name)
