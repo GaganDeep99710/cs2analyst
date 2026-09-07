@@ -34,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "guest-3"
+VERSION = "cs2skin-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -272,6 +272,75 @@ text-align:center}
 """
 
 
+# --- CS2 tactical skin: buy-menu buttons, HUD brackets, muzzle-flash click ---
+CS2_SKIN = """
+button,.btn{font-family:var(--mono);text-transform:uppercase;letter-spacing:.09em;
+font-weight:700;font-size:13.5px;border-radius:3px;
+clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,9px 100%,0 calc(100% - 9px));
+box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);
+transition:filter .1s,transform .04s}
+button:active,.btn:active{transform:translateY(1px)}
+.ghost,button.ghost{box-shadow:inset 0 0 0 1px var(--line)}
+.card{position:relative}
+.card::before,.card::after{content:"";position:absolute;width:13px;height:13px;
+border:2px solid var(--ct);opacity:.4;pointer-events:none}
+.card::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.card::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+.drop{font-family:var(--mono)}
+.drop .big{text-transform:uppercase;letter-spacing:.05em}
+.snd{font-size:11px!important;padding:8px 11px!important;letter-spacing:.12em}
+@keyframes muzz{0%{filter:brightness(1.7) saturate(1.2)}100%{filter:brightness(1)}}
+.fired{animation:muzz .16s ease-out}
+"""
+
+# in-browser weapon SFX (Web Audio, synthesized — no copyrighted audio) + a
+# muzzle-flash flick on click. Mute is remembered per browser.
+SFX_JS = """<script>
+(function(){
+ var KEY='cs2sfx', on=true;
+ try{on=localStorage.getItem(KEY)!=='0';}catch(e){}
+ var ac=null;
+ function ctx(){try{if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();
+   if(ac.state==='suspended')ac.resume();}catch(e){}return ac;}
+ function noise(c,t,dur,type,f1,f2,q,vol){
+   var b=c.createBuffer(1,Math.max(1,c.sampleRate*dur),c.sampleRate),d=b.getChannelData(0);
+   for(var i=0;i<d.length;i++){var e=i/d.length;d[i]=(Math.random()*2-1)*Math.pow(1-e,1.4);}
+   var n=c.createBufferSource();n.buffer=b;
+   var bp=c.createBiquadFilter();bp.type=type;bp.frequency.setValueAtTime(f1,t);
+   if(f2)bp.frequency.linearRampToValueAtTime(f2,t+dur);bp.Q.value=q||1;
+   var g=c.createGain();g.gain.value=vol;n.connect(bp);bp.connect(g);g.connect(c.destination);
+   n.start(t);n.stop(t+dur);
+ }
+ function click(){if(!on)return;var c=ctx();if(!c)return;var t=c.currentTime;
+   var o=c.createOscillator(),g=c.createGain();o.type='square';
+   o.frequency.setValueAtTime(340,t);o.frequency.exponentialRampToValueAtTime(150,t+.05);
+   g.gain.setValueAtTime(.05,t);g.gain.exponentialRampToValueAtTime(.0001,t+.07);
+   o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+.08);
+   noise(c,t,.03,'highpass',1800,0,1,.045);
+ }
+ function rack(){if(!on)return;var c=ctx();if(!c)return;var t=c.currentTime;
+   noise(c,t,.16,'bandpass',700,2600,1.3,.08);
+   var o=c.createOscillator(),g=c.createGain();o.type='sine';
+   o.frequency.setValueAtTime(170,t+.10);o.frequency.exponentialRampToValueAtTime(55,t+.2);
+   g.gain.setValueAtTime(.11,t+.10);g.gain.exponentialRampToValueAtTime(.0001,t+.22);
+   o.connect(g);g.connect(c.destination);o.start(t+.10);o.stop(t+.23);
+ }
+ document.addEventListener('click',function(e){
+   var el=e.target.closest('button,.btn,.drop,.rpplay,summary');
+   if(!el)return;
+   if(el.classList.contains('full')||el.getAttribute('type')==='submit'||
+      /submit/i.test(el.className)) rack(); else click();
+   var fx=el.closest('button,.btn,.drop,summary')||el;
+   fx.classList.remove('fired');void fx.offsetWidth;fx.classList.add('fired');
+ },true);
+ var b=document.getElementById('sndtgl');
+ function upd(){if(b)b.textContent=on?'SFX \\u25cf':'SFX \\u25cb';}
+ if(b){upd();b.addEventListener('click',function(ev){ev.preventDefault();
+   on=!on;try{localStorage.setItem(KEY,on?'1':'0');}catch(e){}if(on)click();upd();});}
+})();
+</script>"""
+
+
 # crosshair mark — inherits currentColor (brand blue) in the nav
 LOGO_MARK = (
     '<svg class=logo viewBox="0 0 32 32" fill="none" stroke="currentColor" '
@@ -313,12 +382,14 @@ def shell(request: Request, body: str, nav: bool = True) -> str:
                      "<a class=btn href=/signup>Sign up</a>")
         navbar = (f"<div class=nav><a class=brand href=/>{LOGO_MARK}"
                   f"<span>AI CS2 Analyst</span></a>"
-                  f"<span class=sp></span>{right}</div>")
+                  f"<span class=sp></span>"
+                  f"<button id=sndtgl class='btn ghost snd' type=button>SFX</button>"
+                  f"{right}</div>")
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>AI CS2 Analyst — CS2 demo coaching</title>{FAVICON_LINK}"
-            f"<style>{STYLE}</style></head><body>"
-            f"{navbar}{body}</body></html>")
+            f"<style>{STYLE}{CS2_SKIN}</style></head><body>"
+            f"{navbar}{body}{SFX_JS}</body></html>")
 
 
 # ---------------------------------------------------------------- pipeline ---
@@ -1072,8 +1143,8 @@ def report_view(request: Request, rid: str):
     return HTMLResponse(
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        f"{FAVICON_LINK}<style>{STYLE}</style></head><body>"
-        f"{topbar}{r['html']}</body></html>")
+        f"{FAVICON_LINK}<style>{STYLE}{CS2_SKIN}</style></head><body>"
+        f"{topbar}{r['html']}{SFX_JS}</body></html>")
 
 
 @app.post("/delete/{rid}")
