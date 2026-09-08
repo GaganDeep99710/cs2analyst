@@ -34,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "bg-1"
+VERSION = "bg-2"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -296,12 +296,23 @@ animation:bgf3 38s ease-in-out infinite}
 @keyframes bgf1{0%,100%{transform:translate(0,0)}50%{transform:translate(130px,90px)}}
 @keyframes bgf2{0%,100%{transform:translate(0,0)}50%{transform:translate(-110px,-90px)}}
 @keyframes bgf3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-90px,60px) scale(1.18)}}
+.bgfx .sweep{position:absolute;top:50%;left:50%;width:1500px;height:1500px;
+border-radius:50%;transform:translate(-50%,-50%);opacity:.6;
+background:conic-gradient(from 0deg,rgba(90,169,240,.13) 0deg,
+rgba(90,169,240,.03) 26deg,transparent 60deg,transparent 360deg);
+-webkit-mask:radial-gradient(circle,#000 8%,rgba(0,0,0,.35) 40%,transparent 64%);
+mask:radial-gradient(circle,#000 8%,rgba(0,0,0,.35) 40%,transparent 64%);
+animation:bgsweep 10s linear infinite}
+@keyframes bgsweep{from{transform:translate(-50%,-50%) rotate(0)}
+to{transform:translate(-50%,-50%) rotate(360deg)}}
 .bgfx::after{content:"";position:absolute;inset:0;
 background:radial-gradient(125% 90% at 50% -5%,transparent 42%,var(--bg) 100%)}
-@media (prefers-reduced-motion:reduce){.bgfx .grid,.bgfx .glow{animation:none}}
+@media (prefers-reduced-motion:reduce){
+.bgfx .grid,.bgfx .glow,.bgfx .sweep{animation:none}}
 """
 
 BGFX_HTML = ('<div class="bgfx"><div class="grid"></div>'
+             '<div class="sweep"></div>'
              '<div class="glow g1"></div><div class="glow g2"></div>'
              '<div class="glow g3"></div></div>')
 
