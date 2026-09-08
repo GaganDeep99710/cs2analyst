@@ -34,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "killfeed-1"
+VERSION = "bg-1"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -272,6 +272,39 @@ text-align:center}
 """
 
 
+# --- animated tactical backdrop: slowly panning grid + drifting radar glows ---
+BGFX_CSS = """
+body{background-image:none!important}
+.bgfx{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;
+background:var(--bg)}
+.bgfx .grid{position:absolute;inset:-60px;
+background-image:linear-gradient(var(--line) 1px,transparent 1px),
+linear-gradient(90deg,var(--line) 1px,transparent 1px);
+background-size:46px 46px;opacity:.55;animation:bgpan 14s linear infinite}
+@keyframes bgpan{from{transform:translate(0,0)}to{transform:translate(46px,46px)}}
+.bgfx .glow{position:absolute;border-radius:50%;filter:blur(70px);
+will-change:transform}
+.bgfx .g1{width:540px;height:540px;top:-140px;left:-90px;
+background:radial-gradient(circle,rgba(90,169,240,.40),transparent 70%);
+animation:bgf1 26s ease-in-out infinite}
+.bgfx .g2{width:480px;height:480px;bottom:-160px;right:-70px;
+background:radial-gradient(circle,rgba(224,165,61,.26),transparent 70%);
+animation:bgf2 32s ease-in-out infinite}
+.bgfx .g3{width:420px;height:420px;top:38%;left:52%;
+background:radial-gradient(circle,rgba(90,169,240,.22),transparent 70%);
+animation:bgf3 38s ease-in-out infinite}
+@keyframes bgf1{0%,100%{transform:translate(0,0)}50%{transform:translate(130px,90px)}}
+@keyframes bgf2{0%,100%{transform:translate(0,0)}50%{transform:translate(-110px,-90px)}}
+@keyframes bgf3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-90px,60px) scale(1.18)}}
+.bgfx::after{content:"";position:absolute;inset:0;
+background:radial-gradient(125% 90% at 50% -5%,transparent 42%,var(--bg) 100%)}
+@media (prefers-reduced-motion:reduce){.bgfx .grid,.bgfx .glow{animation:none}}
+"""
+
+BGFX_HTML = ('<div class="bgfx"><div class="grid"></div>'
+             '<div class="glow g1"></div><div class="glow g2"></div>'
+             '<div class="glow g3"></div></div>')
+
 # --- CS2 tactical skin: buy-menu buttons, HUD brackets, muzzle-flash click ---
 CS2_SKIN = """
 button,.btn{font-family:var(--mono);text-transform:uppercase;letter-spacing:.09em;
@@ -388,8 +421,8 @@ def shell(request: Request, body: str, nav: bool = True) -> str:
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>AI CS2 Analyst — CS2 demo coaching</title>{FAVICON_LINK}"
-            f"<style>{STYLE}{CS2_SKIN}</style></head><body>"
-            f"{navbar}{body}{SFX_JS}</body></html>")
+            f"<style>{STYLE}{CS2_SKIN}{BGFX_CSS}</style></head><body>"
+            f"{BGFX_HTML}{navbar}{body}{SFX_JS}</body></html>")
 
 
 # ---------------------------------------------------------------- pipeline ---
