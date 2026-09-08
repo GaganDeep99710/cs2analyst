@@ -34,7 +34,7 @@ import report_html
 import skills as skillmod
 import store
 
-VERSION = "bg-2"
+VERSION = "bg-3"
 
 store.init()
 app = FastAPI(title="AI CS2 Analyst")
@@ -1198,8 +1198,10 @@ def report_view(request: Request, rid: str):
     return HTMLResponse(
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        f"{FAVICON_LINK}<style>{STYLE}{CS2_SKIN}</style></head><body>"
-        f"{topbar}{r['html']}{SFX_JS}</body></html>")
+        f"{FAVICON_LINK}<style>{STYLE}{CS2_SKIN}{BGFX_CSS}"
+        ".report{background:transparent!important;background-image:none!important}"
+        ".report::before{display:none!important}</style></head><body>"
+        f"{BGFX_HTML}{topbar}{r['html']}{SFX_JS}</body></html>")
 
 
 @app.post("/delete/{rid}")
